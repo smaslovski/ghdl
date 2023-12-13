@@ -1210,7 +1210,7 @@ package body Vhdl.Sem_Inst is
       --  For Parent: the instance of PKG is INST.
       Set_Origin (Pkg, Inter);
 
-      Is_Within_Shared_Instance := not Get_Macro_Expanded_Flag (Pkg);
+      Is_Within_Shared_Instance := not Get_Macro_Expand_Flag (Pkg);
 
       --  Manually instantiate the package declaration.
       Set_Generic_Chain (Inter,
@@ -1423,6 +1423,8 @@ package body Vhdl.Sem_Inst is
 
          --  TODO: vunit ?
       end if;
+
+      Set_Macro_Expand_Flag (Inst, Get_Macro_Expand_Flag (Comp));
 
       Set_Origin (Comp, Prev_Orig);
 
