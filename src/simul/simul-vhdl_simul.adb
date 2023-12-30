@@ -3079,7 +3079,9 @@ package body Simul.Vhdl_Simul is
             if Resolv_Func /= Null_Node
               and then Resolv_Func = Vhdl.Ieee.Std_Logic_1164.Resolved
             then
-               if Vec (Sig_Off).Total > 1 then
+               if Vec (Sig_Off).Total > 1
+                 or else Get_Guarded_Signal_Flag (E.Decl)
+               then
                   pragma Assert (Typ.W = 1);
                   Sub_Resolved := True;
                   Grt.Signals.Ghdl_Signal_Create_Resolution
@@ -3898,7 +3900,8 @@ package body Simul.Vhdl_Simul is
       case Typ.Kind is
          when Type_Bit
            | Type_Logic
-           | Type_Discrete =>
+           | Type_Discrete
+           | Type_Float =>
             declare
                S : constant Ghdl_Signal_Ptr := Read_Sig (Sig);
                V : Value_Union;
@@ -3920,6 +3923,10 @@ package body Simul.Vhdl_Simul is
                      V.I64 := Read_I64 (Val);
                      S.Value_Ptr.I64 := V.I64;
                      S.Driving_Value.I64 := V.I64;
+                  when Mode_F64 =>
+                     V.F64 := Ghdl_F64 (Read_Fp64 (Val));
+                     S.Value_Ptr.F64 := V.F64;
+                     S.Driving_Value.F64 := V.F64;
                   when others =>
                      raise Internal_Error;
                end case;
