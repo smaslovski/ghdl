@@ -2257,11 +2257,11 @@ package body Trans.Rtis is
 
    procedure Generate_Instance (Stmt : Iir; Parent : O_Dnode)
    is
+      Inst : constant Iir := Get_Instantiated_Unit (Stmt);
+      Info : constant Block_Info_Acc := Get_Info (Stmt);
       Name : O_Dnode;
       List : O_Record_Aggr_List;
       Val  : O_Cnode;
-      Inst : constant Iir := Get_Instantiated_Unit (Stmt);
-      Info : constant Block_Info_Acc := Get_Info (Stmt);
    begin
       Name := Generate_Name (Stmt);
 
@@ -2285,7 +2285,7 @@ package body Trans.Rtis is
       else
          declare
             Ent : Iir;
-            Info : Block_Info_Acc;
+            Ent_Info : Block_Info_Acc;
          begin
             --  Check if entity has been instantiated.
             Ent := Get_Instantiated_Header (Stmt);
@@ -2296,12 +2296,12 @@ package body Trans.Rtis is
             then
                Ent := Get_Entity_From_Entity_Aspect (Inst);
             end if;
-            Info := Get_Info (Ent);
-            if Info = null then
+            Ent_Info := Get_Info (Ent);
+            if Ent_Info = null then
                --  The block is never used.
                Val := New_Null_Access (Ghdl_Rti_Access);
             else
-               Val := New_Rti_Address (Info.Block_Rti_Const);
+               Val := New_Rti_Address (Ent_Info.Block_Rti_Const);
             end if;
          end;
       end if;
@@ -2702,6 +2702,14 @@ package body Trans.Rtis is
       end if;
    end Generate_For_Generate_Statement;
 
+   procedure Generate_Entity_Decl (Ent : Iir)
+   is
+      Info : constant Block_Info_Acc := Get_Info (Ent);
+   begin
+      New_Const_Decl (Info.Block_Rti_Const, Create_Identifier ("RTI"),
+                      Global_Storage, Ghdl_Rtin_Block_File);
+   end Generate_Entity_Decl;
+
    procedure Generate_Block (Blk : Iir; Parent_Rti : O_Dnode)
    is
       Info : constant Ortho_Info_Acc := Get_Info (Blk);
@@ -2720,7 +2728,10 @@ package body Trans.Rtis is
 
       Field_Off : O_Cnode;
    begin
-      if Global_Storage /= O_Storage_External then
+      if Get_Kind (Blk) = Iir_Kind_Entity_Declaration then
+         Rti := Info.Block_Rti_Const;
+         Rti_Type := Ghdl_Rtin_Block_File;
+      elsif Global_Storage /= O_Storage_External then
          if Get_Kind (Blk) in Iir_Kinds_Library_Unit then
             --  Also include filename for units.
             Rti_Type := Ghdl_Rtin_Block_File;

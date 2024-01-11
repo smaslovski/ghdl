@@ -3,17 +3,11 @@
 . ../../testenv.sh
 
 if ghdl_is_preelaboration; then
-
     export GHDL_STD_FLAGS=--std=08
-    analyze ea-GenericMux.vhdl
-    analyze tbMux2.vhdl
-    elab_simulate tbMux2
-
-    analyze tbMux.vhdl
-    elab_simulate tbMux
+    analyze tb.vhdl
+    elab_simulate tb_entity_generic_type
 
     clean
 fi
-
 
 echo "Test successful"
