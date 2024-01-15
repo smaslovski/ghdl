@@ -56,6 +56,7 @@ with Trans.Rtis;
 with Trans_Link;
 with Trans_Foreign;
 with Trans_Decls;
+with Trans.Coverage;
 
 with Grt.Types; use Grt.Types;
 with Grt.Processes;
@@ -1361,6 +1362,7 @@ package body Simul.Vhdl_Compile is
       Sub_Inst : constant Synth_Instance_Acc :=
         Get_Sub_Instance (Inst, Stmt);
       Info : constant Block_Info_Acc := Get_Info (Stmt);
+      Hdr : constant Node := Get_Instantiated_Header (Stmt);
       Link : Memory_Ptr;
       Ptr : Memory_Ptr;
    begin
@@ -1392,6 +1394,21 @@ package body Simul.Vhdl_Compile is
          --  An entity (or a configuration).
          Ptr := Build_Elab_Instance (Sub_Inst);
          Link_Instance (Ptr, Get_Source_Scope (Sub_Inst), Link);
+
+         if Hdr /= Null_Node then
+            declare
+               Ent_Info : constant Block_Info_Acc := Get_Info (Hdr);
+               Orig_Mem : Memory_Ptr;
+            begin
+               --  Set the origin field.
+               if Ent_Info /= null then
+                  Orig_Mem := Add_Field_Offset
+                    (Ptr, Ent_Info.Block_Origin_Field);
+                  Write_Ptr (Orig_Mem, Base_Mem);
+               end if;
+            end;
+         end if;
+
          Link_Component (Link, Stmt, Ptr);
       end if;
 
@@ -2090,6 +2107,19 @@ package body Simul.Vhdl_Compile is
             Lunit : constant Node := Elab_Units.Table (I);
          begin
             case Iir_Kinds_Library_Unit (Get_Kind (Lunit)) is
+               when Iir_Kind_Entity_Declaration =>
+                  --  Translate a macro-expanded entity which has been
+                  --  instantiated through a component.
+                  declare
+                     Parent : constant Node := Get_Parent (Lunit);
+                  begin
+                     if Get_Kind (Parent)
+                       = Iir_Kind_Component_Instantiation_Statement
+                       and then Is_Component_Instantiation (Parent)
+                     then
+                        Translation.Translate (Lunit, True);
+                     end if;
+                  end;
                when Iir_Kind_Architecture_Body =>
                   Translation.Translate (Lunit, True);
                when others =>
@@ -2105,6 +2135,8 @@ package body Simul.Vhdl_Compile is
            Elab.Vhdl_Heap.Ghdl_Allocate'Address);
       Def (Trans_Decls.Ghdl_Deallocate,
            Elab.Vhdl_Heap.Ghdl_Deallocate'Address);
+
+      Trans.Coverage.Cover_Finalize;
 
       --  Link.
       Ortho_Jit.Link (Err);
