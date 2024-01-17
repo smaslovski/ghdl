@@ -4,11 +4,15 @@
 
 export GHDL_STD_FLAGS=--std=08
 
+analyze test2.vhdl
+elab_simulate test2
+
 if ghdl_is_preelaboration; then
-    analyze streamtb.vhdl
-    elab_simulate streamtb --fst=streamtb.fst
-    clean
+    analyze ent.vhdl
+    elab_simulate test
 fi
+
+clean
 
 
 echo "Test successful"

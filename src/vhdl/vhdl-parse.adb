@@ -1373,9 +1373,11 @@ package body Vhdl.Parse is
             end loop;
 
          when Tok_Identifier =>
+            Res := Null_Iir;
             Last := Null_Iir;
 
          when others =>
+            Res := Null_Iir;
             Last := Null_Iir;
             --  Error is handled just below.
       end case;
@@ -8098,7 +8100,8 @@ package body Vhdl.Parse is
            | Iir_Kind_Qualified_Expression
            | Iir_Kind_Attribute_Name
            | Iir_Kind_Operator_Symbol
-           | Iir_Kind_Signature =>
+           | Iir_Kind_Signature
+           | Iir_Kinds_External_Name =>
             Error_Msg_Parse
               ("invalid name for a procedure call or missing assignment");
          when Iir_Kind_Error =>
