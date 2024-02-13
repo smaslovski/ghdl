@@ -186,10 +186,12 @@ package body Synth.Verilog_Elaboration is
             | N_Var
             | N_Assign
             | Nkinds_Process
+            | Nkinds_Gate
             | N_Genvar
             | N_Module_Instance
             | N_Task
-            | N_Function =>
+            | N_Function
+            | N_Specify =>
             null;
          when others =>
             Error_Kind ("allocate_param_node", N);
@@ -281,10 +283,12 @@ package body Synth.Verilog_Elaboration is
                | N_Var
                | N_Assign
                | Nkinds_Process
+               | Nkinds_Gate
                | N_Genvar
                | N_Module_Instance
                | N_Task
-               | N_Function =>
+               | N_Function
+               | N_Specify =>
                null;
             when others =>
                Error_Kind ("elaborate_param_chain", Item);
@@ -352,10 +356,14 @@ package body Synth.Verilog_Elaboration is
             --  TODO
             null;
 
+         when N_Specify =>
+            null;
+
          when N_Assign
             | N_Noblk_Assign
             | N_Blocking_Assign
-            | N_Subroutine_Call_Stmt =>
+            | N_Subroutine_Call_Stmt
+            | Nkinds_Gate =>
             null;
          when Nkinds_Process =>
             Allocate_Node (Scope, Get_Statement (N));

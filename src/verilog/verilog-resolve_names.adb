@@ -1534,6 +1534,8 @@ package body Verilog.Resolve_Names is
               | N_Parameter
               | N_Localparam =>
                Add_Decl (Item);
+            when N_Specify =>
+               null;
             when N_Generate_Region
               | N_Generate_Block =>
                Sem_Wildcard_Connections_Inner_Chain
@@ -1878,13 +1880,13 @@ package body Verilog.Resolve_Names is
             null;
          when N_Wire_Direct =>
             Resolve_Names_Data_Type (Item);
-            Resolve_Names (Get_Expression (Item));
             Add_Data_Object_Decl (Item);
+            Resolve_Names (Get_Expression (Item));
          when Nkinds_Delay_Nets =>
             Resolve_Names (Get_Net_Delay (Item));
             Resolve_Names_Data_Type (Item);
-            Resolve_Names (Get_Expression (Item));
             Add_Data_Object_Decl (Item);
+            Resolve_Names (Get_Expression (Item));
          when N_Port_Connection =>
             Resolve_Names (Get_Expression (Item));
          when N_Genvar =>
@@ -2250,6 +2252,9 @@ package body Verilog.Resolve_Names is
          when N_Contribution =>
             Resolve_Names (Get_Lvalue (Item));
             Resolve_Names (Get_Expression (Item));
+
+         when N_Specify =>
+            null;
 
          when others =>
             Error_Kind ("resolve_names", Item);

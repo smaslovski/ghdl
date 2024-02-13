@@ -572,7 +572,8 @@ package body Synth.Verilog_Insts is
             | N_Initial
             | N_Always
             | N_Always_Ff
-            | N_Always_Comb =>
+            | N_Always_Comb
+            | Nkinds_Gate =>
             null;
          when N_Genvar
             | N_Loop_Generate
@@ -591,8 +592,11 @@ package body Synth.Verilog_Insts is
             | N_Function =>
             null;
 
+         when N_Specify =>
+            null;
+
          when others =>
-            Error_Kind ("synth_item", N);
+            Error_Kind ("synth_decl_item", N);
       end case;
    end Synth_Decl_Item;
 
@@ -612,7 +616,8 @@ package body Synth.Verilog_Insts is
             null;
          when N_Port =>
             null;
-         when N_Assign =>
+         when N_Assign
+            | Nkinds_Gate =>
             null;
          when N_Initial =>
             Synth_Initial (Inst, N);
@@ -638,6 +643,8 @@ package body Synth.Verilog_Insts is
             | N_Function =>
             null;
 
+         when N_Specify =>
+            null;
          when others =>
             Error_Kind ("synth_initial_item", N);
       end case;
@@ -661,6 +668,8 @@ package body Synth.Verilog_Insts is
             null;
          when N_Assign =>
             Synth_Continuous_Assign (Inst, N);
+         when Nkinds_Gate =>
+            Synth_Gate (Inst, N);
          when N_Initial =>
             null;
          when N_Always
@@ -684,6 +693,9 @@ package body Synth.Verilog_Insts is
 
          when N_Task
             | N_Function =>
+            null;
+
+         when N_Specify =>
             null;
 
          when others =>
@@ -799,6 +811,10 @@ package body Synth.Verilog_Insts is
          when N_Task =>
             null;
          when N_Subroutine_Call_Stmt =>
+            null;
+         when Nkinds_Gate =>
+            null;
+         when N_Specify =>
             null;
          when others =>
             Error_Kind ("synth_finalize_item", N);
