@@ -19,7 +19,8 @@ with Ada.Unchecked_Deallocation;
 with Types; use Types;
 with Tables;
 with Files_Map;
-with Simple_IO;
+with Simple_IO; use Simple_IO;
+with Utils_IO; use Utils_IO;
 with Errorout;
 with Name_Table;
 with Options; use Options;
@@ -237,7 +238,16 @@ package body Ghdlcov is
       Scan_Expect_String ("dir");
       Scan_Expect (Tok_Colon);
       Scan_Expect (Tok_String);
-      Dir := Name_Table.Get_Identifier (Get_String);
+      declare
+         Dir_Str : constant String := Get_String;
+      begin
+         if Dir_Str = "." then
+            --  Local directory
+            Dir := Null_Identifier;
+         else
+            Dir := Name_Table.Get_Identifier (Get_String);
+         end if;
+      end;
       Scan_Expect (Tok_Comma);
 
       --  sha1: xx
@@ -471,7 +481,7 @@ package body Ghdlcov is
 
          --  Line
          declare
-            subtype S is String (Positive (Pos + 1) .. Positive (Epos));
+            subtype S is String (Natural (Pos + 1) .. Natural (Epos));
          begin
             Put (F, S (Buf (Pos .. Epos - 1)));
          end;
@@ -490,7 +500,106 @@ package body Ghdlcov is
       end loop;
    end Output_Gcov;
 
+   procedure Output_Lcov is
+   begin
+      --  No test name
+      Put_Line ("TN:");
+      for I in Res_Tables.First .. Res_Tables.Last loop
+         declare
+            use Name_Table;
+            Rec : constant File_Record_Acc := Res_Tables.Table (I);
+            Lines : constant Line_Acc := Rec.Lines;
+            Name, Dir : Name_Id;
+            Fn_Cov : Boolean;
+         begin
+            Name := Rec.Name;
+            Dir := Rec.Dir;
+            Files_Map.Normalize_Pathname (Dir, Name);
+            Put_Line ("SF:" & Image (Dir) & Image (Name));
+            --  No functions...
+            Put_Line ("FN:1:file");
+            Fn_Cov := False;
+            for I in Lines'Range loop
+               if Lines (I).Coverage and Lines (I).Covered then
+                  Fn_Cov := True;
+                  exit;
+               end if;
+            end loop;
+            Put ("FNDA:");
+            Put_Uns32 (Boolean'Pos (Fn_Cov));
+            Put_Line (",file");
+            for I in Lines'Range loop
+               if Lines (I).Coverage then
+                  Put ("DA:");
+                  Put_Uns32 (Uns32 (I));
+                  Put (',');
+                  Put_Uns32 (Boolean'Pos (Lines (I).Covered));
+                  New_Line;
+               end if;
+            end loop;
+            Put_Line("end_of_record");
+         end;
+      end loop;
+   end Output_Lcov;
+
+   procedure Output_Ratio (Num_Lines : Uns32; Num_Covered : Uns32)
+   is
+      Ratio : Uns32;
+   begin
+      Put_Uns32 (Num_Covered);
+      Put ("/");
+      Put_Uns32 (Num_Lines);
+      Ratio := Num_Covered * 1000 / Num_Lines;
+      Put (" ");
+      Put_Uns32 (Ratio / 10);
+      Put ('.');
+      Put_Uns32 (Ratio mod 10);
+      Put ('%');
+   end Output_Ratio;
+
+   procedure Output_Summary
+   is
+      Total_Lines : Uns32;
+      Total_Covered : Uns32;
+   begin
+      Total_Lines := 0;
+      Total_Covered := 0;
+      for I in Res_Tables.First .. Res_Tables.Last loop
+         declare
+            use Name_Table;
+            Rec : constant File_Record_Acc := Res_Tables.Table (I);
+            Lines : constant Line_Acc := Rec.Lines;
+            Num_Lines, Num_Covered : Uns32;
+         begin
+            Put (Image (Rec.Name));
+            Put (' ');
+            Num_Lines := 0;
+            Num_Covered := 0;
+            for I in Lines'Range loop
+               if Lines (I).Coverage then
+                  Num_Lines := Num_Lines + 1;
+                  if Lines (I).Covered then
+                     Num_Covered := Num_Covered + 1;
+                  end if;
+               end if;
+            end loop;
+            Output_Ratio (Num_Lines, Num_Covered);
+            New_Line;
+
+            Total_Lines := Total_Lines + Num_Lines;
+            Total_Covered := Total_Covered + Num_Covered;
+         end;
+      end loop;
+
+      Put ("Summary: ");
+      Output_Ratio (Total_Lines, Total_Covered);
+      New_Line;
+   end Output_Summary;
+
+   type Format_Type is (Format_Gcov, Format_Lcov, Format_Summary);
+
    type Command_Coverage is new Command_Type with record
+      Format : Format_Type := Format_Summary;
       Output_Filename : String_Acc := null;
    end record;
 
@@ -521,7 +630,20 @@ package body Ghdlcov is
                             Res : out Option_State) is
    begin
       if Option = "-o" then
-         Cmd.Output_Filename := new String'(Arg);
+         if Arg = "" then
+            Res := Option_Arg_Req;
+         else
+            Cmd.Output_Filename := new String'(Arg);
+            Res := Option_Arg;
+         end if;
+      elsif Option = "--format=lcov" then
+         Cmd.Format := Format_Lcov;
+         Res := Option_Ok;
+      elsif Option = "--format=gcov" then
+         Cmd.Format := Format_Gcov;
+         Res := Option_Ok;
+      elsif Option = "--format=summary" then
+         Cmd.Format := Format_Summary;
          Res := Option_Ok;
       else
          Decode_Option (Command_Type (Cmd), Option, Arg, Res);
@@ -532,27 +654,36 @@ package body Ghdlcov is
    is
       pragma Unreferenced (Cmd);
    begin
-      return "coverage [-o FILENAME] COV-FILES...";
+      --  return "coverage [-o FILENAME] COV-FILES...";
+      return "coverage [--format=FORMAT] COV-FILES...";
    end Get_Short_Help;
 
    procedure Disp_Long_Help (Cmd : Command_Coverage)
    is
-      use Simple_IO;
+      --  use Simple_IO;
       pragma Unreferenced (Cmd);
    begin
-      Put_Line ("  -o FILENAME   specify result file");
+      --  Put_Line ("  -o FILENAME   specify result file");
+      Put_Line (" --format=gcov     create .gcov files in current directory");
+      Put_Line (" --format=lcov     output lcov tracefile (for genhtml)");
+      Put_Line (" --format=summary  print coverage ratio per line and total");
    end Disp_Long_Help;
 
    procedure Perform_Action (Cmd : in out Command_Coverage;
                              Args : String_Acc_Array;
-                             Success : out Boolean)
-   is
-      pragma Unreferenced (Cmd);
+                             Success : out Boolean) is
    begin
       for I in Args'Range loop
          Read_Coverage_File (Args (I).all);
       end loop;
-      Output_Gcov;
+      case Cmd.Format is
+         when Format_Gcov =>
+            Output_Gcov;
+         when Format_Lcov =>
+            Output_Lcov;
+         when Format_Summary =>
+            Output_Summary;
+      end case;
       Success := True;
    end Perform_Action;
 
