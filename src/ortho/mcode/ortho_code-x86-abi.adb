@@ -31,9 +31,7 @@ with Binary_File.Memory;
 
 package body Ortho_Code.X86.Abi is
    --  First argument is at %ebp + 8 / %rbp + 16
-   Subprg_Stack_Init : constant Int32 :=
-     Boolean'Pos (Flags.M64) * 16
-     + Boolean'Pos (not Flags.M64) * 8;
+   Subprg_Stack_Init : constant Int32 := Ptr_Size * 2;
 
    procedure Start_Subprogram (Subprg : O_Dnode; Abi : out O_Abi_Subprg)
    is
@@ -102,6 +100,7 @@ package body Ortho_Code.X86.Abi is
       Set_Decl_Reg (Inter, Reg);
       if Flags.Win64 and Reg in Regs_R64 then
          --  Use the normal home location (first reg at offset 8).
+         --  Note: this is overwritten by Ortho_Code.X86.Insns.Gen_Subprg_Insns
          Set_Local_Offset (Inter, Int32 (8 * Abi.Inum));
       else
          Set_Local_Offset (Inter, Abi.Offset);

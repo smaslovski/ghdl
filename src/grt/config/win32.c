@@ -35,12 +35,6 @@
 static int run_env_en;
 static jmp_buf run_env;
 
-static EXCEPTION_DISPOSITION
-ghdl_SEH_handler (struct _EXCEPTION_RECORD* ExceptionRecord,
-		  void *EstablisherFrame,
-		  struct _CONTEXT* ContextRecord,
-		  void *DispatcherContext);
-
 struct exception_registration
 {
   struct exception_registration *prev;
@@ -100,7 +94,7 @@ get_bt_from_context (struct backtrace_addrs *bt, CONTEXT *ctxt, int skip)
     }
 }
 
-static EXCEPTION_DISPOSITION
+EXCEPTION_DISPOSITION
 ghdl_SEH_handler (struct _EXCEPTION_RECORD* ExceptionRecord,
 		  void *EstablisherFrame,
 		  struct _CONTEXT* ContextRecord,
@@ -158,6 +152,28 @@ __ghdl_maybe_return_via_longjump (int val)
     longjmp (run_env, val);
 }
 
+#ifdef __x86_64__
+int __run_seh(int (*func)(void));
+
+asm ("\n\
+	.def	__run_seh\n\
+	.scl	2\n\
+	.type	32\n\
+	.endef\n\
+	.seh_proc	__run_seh\n\
+	.seh_handler	" __USER_LABEL_PREFIX__ "ghdl_SEH_handler,@except\n\
+__run_seh:\n\
+	subq	$40, %rsp\n\
+	.seh_stackalloc	40\n\
+	.seh_endprologue\n\
+	callq *%rcx\n\
+	nop\n\
+	addq	$40, %rsp\n\
+	ret\n\
+	.seh_endproc\n\
+");
+#endif
+
 int
 __ghdl_run_through_longjump (int (*func)(void))
 {
@@ -181,8 +197,13 @@ __ghdl_run_through_longjump (int (*func)(void))
 
   run_env_en = 1;
   res = setjmp (run_env);
-  if (res == 0)
+  if (res == 0) {
+#ifdef __x86_64__
+    res = __run_seh(func);
+#else
     res = (*func)();
+#endif
+  }
   run_env_en = 0;
 
 #ifdef __i386__
