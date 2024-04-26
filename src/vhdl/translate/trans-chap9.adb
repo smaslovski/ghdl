@@ -720,7 +720,6 @@ package body Trans.Chap9 is
             New_Assign_Stmt (New_Indexed_Element (Get_Var (Info.Psl_Vect_Var),
                                                   New_Obj_Value (Var_I)),
                              New_Lit (Std_Boolean_True_Node));
-            Inc_Var (Var_I);
          when others =>
             null;
       end case;
@@ -756,10 +755,9 @@ package body Trans.Chap9 is
 
          Start_If_Stmt
            (S_Blk,
-            New_Value
-              (New_Indexed_Element (Get_Var (Info.Psl_Vect_Var),
-               New_Lit (New_Index_Lit
-                 (Unsigned_64 (S_Num))))));
+            New_Value (New_Indexed_Element
+                         (Get_Var (Info.Psl_Vect_Var),
+                          New_Lit (New_Index_Lit (Unsigned_64 (S_Num))))));
 
          -- Get simplified state:
          --  - If in transient state -> In progress.
@@ -779,7 +777,7 @@ package body Trans.Chap9 is
             Cond := New_Monadic_Op
               (ON_Not,
                New_Value (New_Indexed_Element (New_Obj (Var_Nvec),
-                 New_Lit (D_Lit))));
+                                               New_Lit (D_Lit))));
             Cond := New_Dyadic_Op
               (ON_And, Cond, Translate_Psl_Expr (Get_Edge_Expr (E), False));
 
