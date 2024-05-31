@@ -48,6 +48,7 @@ set -e
 ISGPL=false
 ISSYNTH=true
 USEDOCKER=false
+SUDO=sudo
 
 # Transform long options to short ones
 for arg in "$@"; do
@@ -65,11 +66,11 @@ done
 # Parse args
 while getopts ":b:p:cdgs" opt; do
   case $opt in
-    d) USEDOCKER=true;;
-    c) enable_color;;
     b) BACK=$OPTARG ;;
-    p) PKG_NAME=$OPTARG;;
+    c) enable_color;;
+    d) USEDOCKER=true; unset SUDO;;
     g) ISGPL=true;;
+    p) PKG_NAME=$OPTARG;;
     s) ISSYNTH=false;;
     \?) printf "$ANSI_RED[CI - args] Invalid option: -$OPTARG $ANSI_NOCOLOR\n" >&2
         exit 1 ;;
@@ -218,10 +219,8 @@ build () {
           echo "$gccURL"
           mkdir gcc-srcs
           curl -L "$gccURL" | tar -xz -C gcc-srcs --strip-components=1
-          cd gcc-srcs
-          sed -i.bak s/ftp:/http:/g ./contrib/download_prerequisites
-          ./contrib/download_prerequisites
-          cd ..
+	  $SUDO apt-get -y install --no-install-recommends libgmp-dev libmpfr-dev libmpc-dev
+
           gend
 
           gstart "[GHDL - build] Configure ghdl"
@@ -368,7 +367,7 @@ ci_run () {
               -e GHDL_VER_HASH="$(git rev-parse HEAD)" \
               -e CONFIG_OPTS="$CONFIG_OPTS" \
               ghdl/build:"$BUILD_IMAGE_TAG" \
-              bash -c "${scriptdir}/ci-run.sh $BUILD_CMD_OPTS build"
+              bash -c "${scriptdir}/ci-run.sh -d $BUILD_CMD_OPTS build"
       else
 	  sudo apt-get update -qq
 	  sudo apt-get -y install --no-install-recommends gnat zlib1g-dev
@@ -410,7 +409,8 @@ RUN --mount=type=bind,src=./,target=/tmp/ghdl/ \
 EOF
 		  gend
 	      else
-		  pip3 install -r testsuite/requirements.txt
+		  python3 -m venv my-venv
+		  my-venv/bin/pip install -r testsuite/requirements.txt
 	      fi
               tests+=" pyunit"
               ;;
@@ -435,7 +435,7 @@ EOF
 	  # Run tests in docker container
 	  $RUN "$GHDL_TEST_IMAGE" bash -c "GHDL=ghdl ./testsuite/testsuite.sh $tests"
       else
-	  PATH="$PATH:$(pwd)/install-$(echo "$TASK" | cut -d+ -f2)/usr/local/bin" \
+	  PATH="$PATH:$(pwd)/install-$(echo "$TASK" | cut -d+ -f2)/usr/local/bin" PYTHON="$(pwd)/my-venv/bin/python" \
 	      ./testsuite/testsuite.sh $tests
       fi
   fi

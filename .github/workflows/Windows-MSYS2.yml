@@ -17,7 +17,7 @@ jobs:
 #          - {icon: '🟪', pkg: 'llvm',  sys: 'MINGW32', arch: 'i686' } ! not yet functional
           - {icon: '🟦', pkg: 'llvm',  sys: 'MINGW64', arch: 'x86_64' }
           - {icon: '🟨', pkg: 'llvm',  sys: 'UCRT64', arch: 'ucrt-x86_64'  } #! experimental
-          - {icon: '🟪', pkg: 'mcode', sys: 'MINGW32', arch: 'i686'  }
+#          - {icon: '🟪', pkg: 'mcode', sys: 'MINGW32', arch: 'i686'  } ! no compiler
           - {icon: '🟦', pkg: 'mcode', sys: 'MINGW64', arch: 'x86_64' }
           - {icon: '🟨', pkg: 'mcode', sys: 'UCRT64', arch: 'ucrt-x86_64'  }
 
@@ -41,7 +41,7 @@ jobs:
         shell: bash
 
       - name: '🧰 Checkout'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           # The command 'git describe' (used for version) needs the history.
           fetch-depth: 0
@@ -56,7 +56,7 @@ jobs:
           done
 
       - name: '📤 Upload artifact: builddir'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.sys }}-${{ matrix.pkg }}-builddir
           path: |
@@ -64,7 +64,7 @@ jobs:
             scripts/msys2-${{ matrix.pkg }}/msys2-${{ matrix.pkg }}.pkg.tar.gz
 
       - name: '📤 Upload artifact: package'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.sys }}-${{ matrix.pkg }}
           path: scripts/msys2-${{ matrix.pkg }}/mingw-*ghdl*.pkg.tar.zst
@@ -85,7 +85,7 @@ jobs:
 #          - {icon: '🟪', pkg: 'llvm',  sys: 'MINGW32' } ! not yet functional
           - {icon: '🟦', pkg: 'llvm',  sys: 'MINGW64' }
           - {icon: '🟨', pkg: 'llvm',  sys: 'UCRT64'  } #! experimental
-          - {icon: '🟪', pkg: 'mcode', sys: 'MINGW32' }
+#          - {icon: '🟪', pkg: 'mcode', sys: 'MINGW32' }
           - {icon: '🟦', pkg: 'mcode', sys: 'MINGW64' }
           - {icon: '🟨', pkg: 'mcode', sys: 'UCRT64'  }
 
@@ -110,7 +110,6 @@ jobs:
           update: true
           pacboy: >
             diffutils:p
-            gcc:p
             python-pip:p
             python-setuptools:p
 
@@ -119,10 +118,10 @@ jobs:
         shell: bash
 
       - name: '🧰 Checkout'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: '📥 Download artifact: package'
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifact
           name: ${{ matrix.sys.sys }}-${{ matrix.sys.pkg }}

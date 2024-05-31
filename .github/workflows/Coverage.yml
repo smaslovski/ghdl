@@ -33,10 +33,10 @@ jobs:
         shell: bash
 
       - name: '🧰 Checkout'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: '📥 Download artifact: package'
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifact
           name: MINGW64-llvm
@@ -55,7 +55,7 @@ jobs:
 
       - name: '📤 Upload artifact: coverage report'
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: coverage
           path: coverage.xml
@@ -75,13 +75,13 @@ jobs:
     steps:
 
       - name: '📥 Download artifact: coverage report'
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: .
           name: coverage
 
       - name: CodeCov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           file: coverage.xml
           flags: unittests

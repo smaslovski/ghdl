@@ -17,9 +17,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {icon: '🟪', pkg: 'mcode', sys: 'MINGW32', arch: 'i686' }
-#          - {icon: '🟦', pkg: 'mcode', sys: 'MINGW64', arch: 'x86_64' } #! simulation with mcode is not yet supported on win64
-          - {icon: '🟨', pkg: 'mcode', sys: 'UCRT64', arch: 'ucrt-x86_64'  } #! experimental; simulation with mcode is not yet supported on win64
+#          - {icon: '🟪', pkg: 'mcode', sys: 'MINGW32', arch: 'i686' }
+          - {icon: '🟦', pkg: 'mcode', sys: 'MINGW64', arch: 'x86_64' }
+          - {icon: '🟨', pkg: 'mcode', sys: 'UCRT64', arch: 'ucrt-x86_64'  }
 
     env:
       MINGW_ARCH: ${{ matrix.sys }}
@@ -43,7 +43,7 @@ jobs:
         shell: bash
 
       - name: '🧰 Checkout'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           # The command 'git describe' (used for version) needs the history.
           fetch-depth: 0
@@ -65,14 +65,14 @@ jobs:
           zip ghdl-${{matrix.sys}}.zip -r GHDL
 
       - name: '📤 Upload artifact: pre-wheel'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.sys }}-pre-wheel
           path: |
             builddir/pre-wheel-${{matrix.sys}}.zip
 
       - name: '📤 Upload artifact: zip pure-win'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.sys }}-zip-win
           path: |
@@ -90,9 +90,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {icon: '🟪', sys: 'MINGW32' }
-#          - {icon: '🟦', sys: 'MINGW64' } #! simulation with mcode is not yet supported on win64
-#          - {icon: '🟨', sys: 'UCRT64' } #! experimental; simulation with mcode is not yet supported on win64
+#          - {icon: '🟪', sys: 'MINGW32' }
+          - {icon: '🟦', sys: 'MINGW64' }
+          - {icon: '🟨', sys: 'UCRT64' }
 
     defaults:
       run:
@@ -100,7 +100,7 @@ jobs:
 
     steps:
       - name: '📥 Download artifact: package'
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifact
           name: ${{ matrix.sys }}-zip-win
@@ -135,7 +135,7 @@ jobs:
            git config --global core.autocrlf input
 
       - name: '🧰 Checkout'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           path: checkout
 

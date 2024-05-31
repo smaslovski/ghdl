@@ -24,7 +24,7 @@ jobs:
 
     steps:
       - name: '🧰 Checkout'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: '📚 Run gnatdoc'
         run: |
@@ -35,7 +35,7 @@ jobs:
           EOF
 
       - name: '📤 Upload artifact: gnatdoc'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: gnatdoc
           path: gnatdoc
@@ -51,7 +51,7 @@ jobs:
     steps:
 
       - name: '🧰 Checkout'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: '⛴ Build ghdl/doc'
         run: |
@@ -62,7 +62,7 @@ jobs:
           EOF
 
       - name: '📥 Download artifact: gnatdoc'
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: gnatdoc
           path: public/gnatdoc
@@ -78,7 +78,7 @@ jobs:
       #- run: nroff -man doc/_build/man/ghdl.1
 
       - name: '📤 Upload artifact: HTML, LaTeX and man'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: doc
           path: |
@@ -95,10 +95,10 @@ jobs:
 
     steps:
       - name: '🧰 Checkout'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: '🐍 Setup Python'
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -128,7 +128,7 @@ jobs:
         run: python setup.py bdist_wheel
 
       - name: '📤 Upload artifact: pyGHDL'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: pyGHDL
           path: dist/
@@ -146,7 +146,7 @@ jobs:
     steps:
 
       - name: '🧰 Checkout'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - run: TASK=bullseye+mcode ./scripts/ci-run.sh -c --gplcompat
 
@@ -161,16 +161,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: 20, backend: mcode }
+          - { os: 24, backend: mcode }
           - { os: 22, backend: mcode }
-          - { os: 20, backend: llvm-10 }
           - { os: 22, backend: llvm-14 }
-          - { os: 20, backend: gcc-9.4.0 }
           - { os: 22, backend: gcc-12.1.0 }
+          - { os: 20, backend: mcode }
+#          - { os: 20, backend: llvm-10 }
+#          - { os: 20, backend: gcc-9.4.0 }
 
     steps:
       - name: '🧰 Checkout'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: '🛳 Build and test GHDL in containers'
         run: |
@@ -178,7 +179,7 @@ jobs:
           mv ghdl-*-ubuntu${{ matrix.os }}-*.tgz ghdl-gha-ubuntu-${{ matrix.os }}.04-$(echo ${{ matrix.backend }} | sed 's#-.*##g').tgz
 
       - name: '📤 Upload artifact: package'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ubuntu${{ matrix.os }}-${{ matrix.backend }}
           path: ghdl-gha-ubuntu-*.tgz
@@ -194,20 +195,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-        - '11'
-#        - '12' # issue1897 fails.  Maybe test 11 build on 12.
-        backend:
-          - mcode
-          - llvm
+        include:
+          - { os: 11, backend: mcode }
+          - { os: 11, backend: llvm }
+          - { os: 12, backend: mcode }
 
     steps:
       - name: '🧰 Checkout'
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: '💾 Cache gnat'
         id: cache-gnat
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: gnat
           key: ${{ runner.os }}-gnat
@@ -229,7 +228,7 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: '10.14'
 
       - name: '📤 Upload artifact: package'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: macos${{ matrix.os }}-${{ matrix.backend }}
           path: ghdl-macos-${{ matrix.os }}-${{ matrix.backend }}.tgz
@@ -267,7 +266,7 @@ jobs:
     steps:
 
       - name: '📥 Download artifacts'
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
 
