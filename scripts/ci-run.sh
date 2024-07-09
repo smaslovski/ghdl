@@ -243,6 +243,10 @@ build () {
           CXX="clang++"
           CONFIG_OPTS+=" --with-llvm-config CXX=$CXX"
       ;;
+      llvm-jit)
+          CXX="clang++"
+          CONFIG_OPTS+=" --with-llvm-config CXX=$CXX --with-llvm-jit"
+      ;;
       llvm-3.5)
           CXX="clang++"
           CONFIG_OPTS+=" --with-llvm-config=llvm-config-3.5 CXX=$CXX"
@@ -256,6 +260,14 @@ build () {
           printf "$ANSI_RED[GHDL - build] Unknown build $BACK $ANSI_NOCOLOR\n"
           exit 1;;
   esac
+
+  if [ "x$IS_MACOS" = "xtrue" -a "$GITHUB_OS_VER" -ge 13 ]; then
+      # Use classic ld and not lld (which simply crashes)
+      CONFIG_OPTS+=" LDFLAGS=-Wl,-ld_classic"
+      # Use static libs (including libzstd) and dead-strip (to avoid libz3)
+      libzstd=$(brew --prefix zstd)/lib/libzstd.a
+      export LLVM_LDFLAGS="$(llvm-config --link-static --libfiles --system-libs | sed -e s@-lzstd@$libzstd@) -Wl,-dead_strip,-dead_strip_dylibs"
+  fi
 
   if [ ! "`echo $BACK | grep gcc`" ]; then
       gstart "[GHDL - build] Configure"
@@ -293,14 +305,27 @@ build () {
 
   #--- build tools versions
 
-  {
-      make --version | grep 'Make'
-      gnatls --version | grep 'GNATLS'
-      gcc --version | grep 'gcc'
-      if [ "$CXX" != "" ]; then
-          $CXX --version | grep 'clang'
-      fi
-  } > BUILD_TOOLS
+  gstart "[GHDL - info] Info about tools"
+
+  uname -s
+
+  if [ "x$IS_MACOS" = "xtrue" ]; then
+      echo "ghdl:"
+      otool -L $INSTALL_DIR/usr/local/bin/ghdl
+      echo "libghdlvpi:"
+      otool -L $INSTALL_DIR//usr/local/lib/libghdlvpi.dylib
+  else
+      ldd $INSTALL_DIR/usr/local/bin/ghdl
+  fi
+
+  make --version | grep 'Make'
+  gnatls --version | grep 'GNATLS'
+  gcc --version | grep 'gcc'
+  if [ "$CXX" != "" ]; then
+      $CXX --version | grep 'clang'
+  fi
+
+  gend
 
   #---
 
@@ -385,6 +410,8 @@ ci_run () {
   # Test
 
   if [ "x$IS_MACOS" = "xtrue" ]; then
+      python3 -m venv ./venv
+      source ./venv/bin/activate
       pip3 install -r testsuite/requirements.txt
       CC=clang \
       PATH="$PATH:$(pwd)/install-$(echo "$TASK" | cut -d+ -f2)/usr/local/bin" \
@@ -453,7 +480,7 @@ EOF
 echo "command: $0 $@"
 
 unset IS_MACOS
-if [ "$GITHUB_OS" = "macOS" ]; then
+if [ $(uname -s) = "Darwin" ]; then
   IS_MACOS="true"
 fi
 
