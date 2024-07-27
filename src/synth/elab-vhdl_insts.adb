@@ -238,7 +238,20 @@ package body Elab.Vhdl_Insts is
                raise Internal_Error;
 
             when Iir_Kinds_Interface_Subprogram_Declaration =>
-               null;
+               declare
+                  Act : Node;
+               begin
+                  case Get_Kind (Assoc) is
+                     when Iir_Kind_Association_Element_Open =>
+                        Act := Get_Open_Actual (Assoc);
+                     when Iir_Kind_Association_Element_Subprogram =>
+                        Act := Get_Actual (Assoc);
+                     when others =>
+                        raise Internal_Error;
+                  end case;
+                  Act := Strip_Denoting_Name (Act);
+                  Create_Interface_Subprg (Sub_Inst, Inter, Act);
+               end;
          end case;
 
          Next_Association_Interface (Assoc, Assoc_Inter);
@@ -1203,11 +1216,11 @@ package body Elab.Vhdl_Insts is
                                    Get_Port_Map_Aspect_Chain (Bind));
       pragma Assert (Is_Expr_Pool_Empty);
 
+      Add_To_Elab_Units (E_Arch);
+
       if Flag_Elab_Sub_Instances then
          Elab_Instance_Body (Sub_Inst);
       end if;
-
-      Add_To_Elab_Units (E_Arch);
    end Elab_Component_Instantiation_Statement;
 
    procedure Elab_Design_Instantiation_Statement
