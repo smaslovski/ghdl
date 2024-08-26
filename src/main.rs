@@ -1,4 +1,7 @@
 use std::{env, ffi, fs, io, iter, os};
+mod errorout_def;
+mod errorout;
+mod vhdl;
 
 #[derive(Clone, Copy)]
 #[repr(u8)]
@@ -39,6 +42,9 @@ extern "C" {
 
     #[link_name = "flags__flag_syn_binding"]
     static mut flag_syn_binding: bool;
+
+    #[link_name = "flags__flag_synopsys"]
+    static mut flag_synopsys: bool;
 
     #[link_name = "vhdl__scanner__flag_psl_comment"]
     static mut flag_psl_comment: bool;
@@ -93,6 +99,12 @@ extern "C" {
 
     #[link_name = "errorout__console__install_handler"]
     fn errorout_console_install_handler();
+
+    #[link_name = "errorout__warning_error"]
+    fn warning_error(id: u8, as_error: bool);
+
+    #[link_name = "errorout__enable_warning"]
+    fn enable_warning(id: u8, as_error: bool);
 
     #[link_name = "libraries__work_directory"]
     static mut work_directory: NameId;
@@ -165,6 +177,19 @@ fn library_to_filename(lib: VhdlNode, std: VhdlStd) -> String {
 }
 
 #[derive(Clone, Copy)]
+enum WarnValue {
+    Default,
+    Enable,
+    Disable,
+}
+
+#[derive(Clone, Copy)]
+struct WarnState {
+    enable: WarnValue,
+    error: WarnValue,
+}
+
+#[derive(Clone, Copy)]
 struct VhdlAnalyzeFlags {
     std: VhdlStd,
     relaxed: bool,
@@ -172,20 +197,28 @@ struct VhdlAnalyzeFlags {
     synopsys_pkgs: bool,
     synth_binding: bool,
     work_name: NameId,
+    work_dir: NameId,
     psl_comment: bool,
     comment_keyword: bool,
+    warnings: [WarnState; crate::errorout::WARNID_USIZE],
 }
 
-static DEFAULT_VHDL_FLAGS: VhdlAnalyzeFlags = VhdlAnalyzeFlags {
-    std: VhdlStd::Vhdl93,
-    relaxed: true,
-    bootstrap: false,
-    synopsys_pkgs: false,
-    synth_binding: false,
-    work_name: NameId::NULL,
-    psl_comment: false,
-    comment_keyword: false,
-};
+impl Default for VhdlAnalyzeFlags {
+    fn default() -> Self {
+        Self {
+         std: VhdlStd::Vhdl93,
+         relaxed: true,
+        bootstrap: false,
+        synopsys_pkgs: false,
+        synth_binding: false,
+        work_name: NameId::NULL,
+        work_dir: NameId::NULL,
+        psl_comment: false,
+        comment_keyword: false,
+        warnings: [WarnState {enable: WarnValue::Default, error: WarnValue::Default}; crate::errorout::WARNID_USIZE],
+        }
+    }
+}
 
 fn apply_analyze_flags(flags: &VhdlAnalyzeFlags) {
     unsafe {
@@ -194,8 +227,25 @@ fn apply_analyze_flags(flags: &VhdlAnalyzeFlags) {
         flag_comment_keyword = flags.comment_keyword;
         flag_psl_comment = flags.psl_comment;
         flag_syn_binding = flags.synth_binding;
+        flag_synopsys = flags.synopsys_pkgs;
         if flags.work_name != NameId::NULL {
             work_library_name = flags.work_name;
+        }
+        if flags.work_dir != NameId::NULL {
+            work_directory = flags.work_dir;
+        }
+        for (i, w) in flags.warnings.iter().enumerate() {
+            let id = crate::errorout::MSGID_FIRST_WARNID + (i as u8);
+            match w.error {
+                WarnValue::Default => {},
+                WarnValue::Enable => { warning_error(id, true); },
+                WarnValue::Disable => { warning_error(id, false); },
+            }
+            match w.enable {
+                WarnValue::Default => {},
+                WarnValue::Enable => { enable_warning(id, true); },
+                WarnValue::Disable => {enable_warning(id, false); },
+            }
         }
     }
 }
@@ -253,11 +303,11 @@ fn parse_analyze_flags(flags: &mut VhdlAnalyzeFlags, arg: &str) -> Option<ParseS
         flags.bootstrap = true;
         return None;
     }
-    if arg == "-fsynopsys" {
+    if arg == "-fsynopsys" || arg == "--ieee=synopsys" {
         flags.synopsys_pkgs = true;
         return None;
     }
-    if arg == "-frelaxed" {
+    if arg == "-frelaxed" || arg == "-frelaxed-rules" {
         flags.relaxed = true;
         return None;
     }
@@ -274,13 +324,80 @@ fn parse_analyze_flags(flags: &mut VhdlAnalyzeFlags, arg: &str) -> Option<ParseS
         flags.work_name = NameId::from_string(&arg[7..]);
         return None;
     }
+    if arg.starts_with("--workdir=") {
+        let val = &arg[10..];
+        const SEP: char = std::path::MAIN_SEPARATOR;
+        if val == "." {
+            flags.work_dir = NameId::NULL;
+        } else if val.chars().last().unwrap() == SEP {
+            flags.work_dir = NameId::from_string(val);
+        } else {
+            let mut dir = String::with_capacity(val.len() + 1);
+            dir.push_str(val);
+            dir.push(SEP);
+            flags.work_dir = NameId::from_string(&dir);
+        }
+        return None;
+    }
     if arg == "-g" || arg == "-O" {
         //  TODO: for the back-end.
+        return None;
+    }
+    if arg == "-Werror" {
+        for w in flags.warnings.iter_mut() {
+            w.error = WarnValue::Enable;
+        }
         return None;
     }
     return Some(ParseStatus::UnknownOption {
         msg: arg.to_string(),
     });
+}
+
+fn analyze(args: &[String], save: bool) -> Result<(), ParseStatus> {
+    let mut status = true;
+    let mut flags = VhdlAnalyzeFlags::default();
+    let mut expect_failure = false;
+    let mut files = vec![];
+
+    // Parse arguments
+    for arg in &args[1..] {
+        if arg == "--expect-failure" {
+            expect_failure = true;
+        } else {
+            match parse_analyze_flags(&mut flags, &arg) {
+                None => {}
+                Some(ParseStatus::NotOption) => files.push(arg.clone()),
+                Some(err) => return Err(err),
+            }
+        }
+    }
+
+    // Initialize
+    apply_analyze_flags(&flags);
+    unsafe {
+        compile_init(true);
+    };
+
+    // And analyze every file
+    for file in &files {
+        let id = unsafe { get_identifier_with_len(file.as_ptr(), file.len() as u32) };
+        eprintln!("analyze {file}\n");
+        status = unsafe { analyze_file(id) };
+        if !status {
+            break;
+        }
+    }
+
+    // Save the library on success
+    if status && save {
+        unsafe { save_work_library() };
+    }
+    return if status == !expect_failure {
+        Ok(())
+    } else {
+        Err(ParseStatus::OptionError)
+    };
 }
 
 trait Command {
@@ -296,19 +413,47 @@ impl Command for CommandAnalyze {
     }
 
     fn execute(&self, args: &[String]) -> Result<(), ParseStatus> {
+        analyze(args, true)
+    }
+}
+
+struct CommandSyntax {}
+
+impl Command for CommandSyntax {
+    fn get_command(&self) -> &'static [&'static str] {
+        return &["syntax", "-s"];
+    }
+
+    fn execute(&self, args: &[String]) -> Result<(), ParseStatus> {
+        analyze(args, false)
+    }
+}
+
+struct CommandImport {}
+
+impl Command for CommandImport {
+    fn get_command(&self) -> &'static [&'static str] {
+        return &["import", "-i"];
+    }
+
+    fn execute(&self, args: &[String]) -> Result<(), ParseStatus> {
         let mut status = true;
-        let mut flags = DEFAULT_VHDL_FLAGS;
+        let mut flags = VhdlAnalyzeFlags::default();
         let mut expect_failure = false;
         let mut files = vec![];
+        let mut got_file = false;
 
         // Parse arguments
         for arg in &args[1..] {
-            if arg == "--expect-failure" {
+            if got_file {
+                files.push(arg.clone());
+            }
+            else if arg == "--expect-failure" {
                 expect_failure = true;
             } else {
                 match parse_analyze_flags(&mut flags, &arg) {
                     None => {}
-                    Some(ParseStatus::NotOption) => files.push(arg.clone()),
+                    Some(ParseStatus::NotOption) => {got_file = true; files.push(arg.clone()); },
                     Some(err) => return Err(err),
                 }
             }
@@ -322,8 +467,10 @@ impl Command for CommandAnalyze {
 
         // And analyze every file
         for file in &files {
+            if file.starts_with("--work=") {
+
+            }
             let id = unsafe { get_identifier_with_len(file.as_ptr(), file.len() as u32) };
-            eprintln!("analyze {file}\n");
             status = unsafe { analyze_file(id) };
             if !status {
                 break;
@@ -350,7 +497,7 @@ impl Command for CommandRemove {
     }
 
     fn execute(&self, args: &[String]) -> Result<(), ParseStatus> {
-        let mut flags = DEFAULT_VHDL_FLAGS;
+        let mut flags = VhdlAnalyzeFlags::default();
 
         for arg in &args[1..] {
             match parse_analyze_flags(&mut flags, &arg) {
@@ -379,7 +526,7 @@ impl Command for CommandRemove {
 }
 
 fn analyze_elab(args: &[String]) -> Result<Vec<String>, ParseStatus> {
-    let mut flags = DEFAULT_VHDL_FLAGS;
+    let mut flags = VhdlAnalyzeFlags::default();
     let mut expect_failure = false;
     let mut unit = NameId::NULL;
     let mut arch = NameId::NULL;
@@ -492,6 +639,7 @@ impl Command for CommandRun {
 
 const COMMANDS: &[&dyn Command] = &[
     &CommandAnalyze {},
+    &CommandSyntax {},
     &CommandElab {},
     &CommandRun {},
     &CommandRemove {},
@@ -506,12 +654,55 @@ fn get_parser(args: &[String]) -> Result<(), ParseStatus> {
     return Err(ParseStatus::UnknownCommand);
 }
 
+fn expand_args(args : Vec<String>) -> io::Result<Vec<String>>
+{
+    //  Check if there is one arg to expand
+    let mut need_expand = false;
+    for arg in &args {
+        if arg.starts_with('@') {
+            need_expand = true;
+            break;
+        }
+    }
+    if !need_expand {
+        return Ok(args);
+    }
+    let mut res = Vec::<String>::new();
+    for arg in args {
+        if arg.starts_with('@') {
+            use std::io::BufRead;
+            let filename = &arg[1..];
+            let file;
+            match std::fs::File::open(filename) {
+                Ok(f) => { file = f; }
+                Err(e) => { eprintln!("cannot open {filename}: {e}"); return Err(e); }
+            }
+            let reader = std::io::BufReader::new(file);
+            for line in reader.lines() {
+                res.push(line?);
+            }
+        }
+        else {
+            res.push(arg);
+        }
+    }
+    return Ok(res);
+}
+
 fn main() {
     unsafe {
         ghdl_rust_init();
     }
 
-    let args: Vec<String> = env::args().collect();
+    let init_args : Vec<String> = env::args().collect();
+    let args : Vec<String>;
+    match expand_args(init_args) {
+        Ok(eargs) => { args = eargs; }
+        Err(_) => {
+            std::process::exit(1);
+        }
+    }
+
     let progname = &args[0];
 
     if args.len() < 2 {
