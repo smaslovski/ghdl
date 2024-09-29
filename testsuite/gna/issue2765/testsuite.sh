@@ -2,8 +2,8 @@
 
 . ../../testenv.sh
 
-analyze pkg.vhdl ent.vhdl
-elab_simulate rc_add_n_f
+analyze top.vhdl
+elab_simulate top
 
 clean
 

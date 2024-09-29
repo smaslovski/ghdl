@@ -46,7 +46,7 @@ with Grt.Astdio; use Grt.Astdio;
 with Grt.Astdio.Vhdl; use Grt.Astdio.Vhdl;
 with Grt.Strings; use Grt.Strings;
 with Grt.Hooks; use Grt.Hooks;
-with Grt.Options;
+with Grt.Options; use Grt.Options;
 with Grt.Vcd; use Grt.Vcd;
 with Grt.Errors; use Grt.Errors;
 with Grt.Rtis; use Grt.Rtis;
@@ -115,8 +115,14 @@ package body Grt.Vpi is
 --       dbgNew_Line;
 --    end dbgPut_Line;
 
-   procedure Free is new Ada.Unchecked_Deallocation
-     (Name => vpiHandle, Object => struct_vpiHandle);
+   procedure Free_Handle is new Ada.Unchecked_Deallocation
+      (Name => vpiHandle, Object => struct_vpiHandle);
+
+   procedure Free_Time is new Ada.Unchecked_Deallocation
+      (Name => p_vpi_time, Object => s_vpi_time);
+
+   procedure Free_Value is new Ada.Unchecked_Deallocation
+      (Name => p_vpi_value, Object => s_vpi_value);
 
    ------------------------------------------------------------------------
    -- NUL-terminate strings.
@@ -218,6 +224,8 @@ package body Grt.Vpi is
             Trace ("vpiNetArray");
          when vpiPort =>
             Trace ("vpiPort");
+         when vpiDirection =>
+            Trace ("vpiDirection");
          when vpiParameter =>
             Trace ("vpiParameter");
          when vpiScope =>
@@ -281,8 +289,12 @@ package body Grt.Vpi is
    procedure Trace_Time_Tag (V : Integer) is
    begin
       case V is
+         when vpiScaledRealTime =>
+            Trace ("vpiScaledRealTime");
          when vpiSimTime =>
             Trace ("vpiSimTime");
+         when vpiSuppressTime =>
+            Trace ("vpiSuppressTime");
          when others =>
             Trace (V);
       end case;
@@ -342,10 +354,15 @@ package body Grt.Vpi is
    function Vpi_Time_To_Time (V : s_vpi_time) return Std_Time is
       Res : Std_Time;
    begin
-      if V.mType /= vpiSimTime then
-         raise Program_Error;
-      end if;
-      Res := Std_Time (Unsigned_64 (V.mHigh) * 2 ** 32 + Unsigned_64 (V.mLow));
+      case V.mType is
+         when vpiScaledRealTime =>
+            Res := Std_Time (Unsigned_64 (V.mReal / Time_Scale_Unit));
+         when vpiSimTime =>
+            Res := Std_Time (Unsigned_64 (V.mHigh) * 2 ** 32);
+            Res := Res + Std_Time (V.mLow);
+         when others =>
+            raise Program_Error;
+      end case;
       return Res;
    end Vpi_Time_To_Time;
 
@@ -353,7 +370,24 @@ package body Grt.Vpi is
 -- * * *   V P I   f u n c t i o n s   * * * * * * * * * * * * * * * * * * * *
 -------------------------------------------------------------------------------
 
-   --  Free an handler, when it was not passed by reference.
+   --  Free a handle, checking for attached memory.
+   procedure Free (H : in out vpiHandle) is
+   begin
+      if H = null then
+         return;
+      end if;
+      if H.mType = vpiCallback then
+         if H.Cb.Time /= null then
+            Free_Time (H.Cb.Time);
+         end if;
+         if H.Cb.Value /= null then
+            Free_Value (H.Cb.Value);
+         end if;
+      end if;
+      Free_Handle (H);
+   end Free;
+
+   --  Free an handle, when it was not passed by reference.
    procedure Free_Copy (H : vpiHandle)
    is
       Copy : vpiHandle;
@@ -557,8 +591,16 @@ package body Grt.Vpi is
             | VhpiForGenerateK
             | VhpiCompInstStmtK =>
             return vpiModule;
-         when VhpiPortDeclK
-            | VhpiSigDeclK =>
+         when VhpiPortDeclK =>
+            declare
+               Info : Verilog_Wire_Info;
+            begin
+               Get_Verilog_Wire (Res, Info);
+               if Info.Vtype /= Vcd_Bad then
+                  return vpiPort;
+               end if;
+            end;
+         when VhpiSigDeclK =>
             declare
                Info : Verilog_Wire_Info;
             begin
@@ -646,7 +688,7 @@ package body Grt.Vpi is
    -- vpiHandle  vpi_scan(vpiHandle iter)
    -- Scan the Verilog HDL hierarchy for objects with a one-to-many
    -- relationship.
-   -- see IEEE 1364-2001, chapter 27.36, page 709
+   -- see IEEE Std 1800-2017, chapter 38.40, page 1109
    function Vpi_Scan_Internal (Iter: vpiHandle) return vpiHandle
    is
       Res : VhpiHandleT;
@@ -735,7 +777,7 @@ package body Grt.Vpi is
 
    ------------------------------------------------------------------------
    -- char *vpi_get_str(int property, vpiHandle ref)
-   -- see IEEE 1364-2001, page xxx
+   -- see IEEE Std 1800-2017, page 1061
    Tmpstring2 : String (1 .. 1024);
    function Vpi_Get_Str_Internal (Property : Integer; Ref : vpiHandle)
                                  return Ghdl_C_String
@@ -743,6 +785,75 @@ package body Grt.Vpi is
       Prop : VhpiStrPropertyT;
       Len : Natural;
       Res : Ghdl_C_String;
+
+      procedure Copy_VpiType_CString is
+         R : String renames Tmpstring2;
+         procedure Add (C : Character) is
+         begin
+            Len := Len + 1;
+            if Len <= R'Last then
+               R (Len) := C;
+            end if;
+         end Add;
+
+         procedure Add (Str : String) is
+         begin
+            for I in Str'Range loop
+               Add (Str (I));
+            end loop;
+         end Add;
+
+      begin
+         Len := 0;
+         case Vhpi_Handle_To_Vpi_Prop(Ref.Ref) is
+            when vpiUndefined =>
+               Add ("vpiUndefined");
+            when vpiType =>
+               Add ("vpiType");
+            when vpiName =>
+               Add ("vpiName");
+            when vpiFullName =>
+               Add ("vpiFullName");
+            when vpiSize =>
+               Add ("vpiSize");
+            when vpiTimePrecision =>
+               Add ("vpiTimePrecision");
+            when vpiScalar =>
+               Add ("vpiScalar");
+            when vpiVector =>
+               Add ("vpiVector");
+            when vpiModule =>
+               Add ("vpiModule");
+            when vpiDefFile =>
+               Add ("vpiDefFile");
+            when vpiNet =>
+               Add ("vpiNet");
+            when vpiPort =>
+               Add ("vpiPort");
+            when vpiDirection =>
+               Add ("vpiDirection");
+            when vpiParameter =>
+               Add ("vpiParameter");
+            when vpiScope =>
+               Add ("vpiScope");
+            when vpiInternalScope =>
+               Add ("vpiInternalScope");
+            when vpiLeftRange =>
+               Add ("vpiLeftRange");
+            when vpiRightRange =>
+               Add ("vpiRightRange");
+            when vpiStop =>
+               Add ("vpiStop");
+            when vpiFinish =>
+               Add ("vpiFinish");
+            when vpiReset =>
+               Add ("vpiReset");
+            when others =>
+               return;
+         end case;
+         R (Len + 1) := NUL;
+      end Copy_VpiType_CString;
+
    begin
       if Ref = null then
          return null;
@@ -753,9 +864,15 @@ package body Grt.Vpi is
             Prop := VhpiFullNameP;
          when vpiName =>
             Prop := VhpiNameP;
+         when vpiDefFile =>
+            Prop := VhpiFileNameP;
          when vpiType =>
-            Tmpstring2 (1 .. 4) := "???" & NUL;
-            return To_Ghdl_C_String (Tmpstring2'Address);
+            Copy_VpiType_CString;
+            if Len = 0 then
+               return null;
+            else
+               return To_Ghdl_C_String (Tmpstring2'Address);
+            end if;
          when others =>
             dbgPut_Line ("vpi_get_str: unhandled property");
             return null;
@@ -905,17 +1022,17 @@ package body Grt.Vpi is
       end case;
    end Get_Value_Obj;
 
+   function E8_To_Char (Val : Ghdl_E8) return Character is
+   begin
+      if Val not in Map_Type_E8'range then
+         return '?';
+      else
+         return Map_Std_E8 (Val);
+      end if;
+   end E8_To_Char;
+
    function Vpi_Get_Value_Bin (Obj : VhpiHandleT) return Ghdl_C_String
    is
-      function E8_To_Char (Val : Ghdl_E8) return Character is
-      begin
-         if Val not in Map_Type_E8'range then
-            return '?';
-         else
-            return Map_Std_E8 (Val);
-         end if;
-      end E8_To_Char;
-
       Info : Verilog_Wire_Info;
       Len : Ghdl_Index_Type;
    begin
@@ -1027,6 +1144,87 @@ package body Grt.Vpi is
       end case;
    end Vpi_Get_Value_Int;
 
+   function To_Unsigned_32 is new Ada.Unchecked_Conversion
+     (Integer, Unsigned_32);
+
+   procedure Vpi_Get_Value_Vecval (Obj : VhpiHandleT; Vec : p_vpi_vecval)
+   is
+      procedure E8_To_VV
+         (V : Ghdl_E8; A : out Unsigned_32; B : out Unsigned_32) is
+      begin
+         B := 0;
+         case E8_To_Char (V) is
+            when '0'
+               | 'L' =>
+               A := 0;
+            when '1'
+               | 'H' =>
+               A := 1;
+            when 'Z' =>
+               A := 0;
+               B := 1;
+            when others =>
+               A := 1;
+               B := 1;
+            end case;
+      end E8_To_VV;
+
+      Info : Verilog_Wire_Info;
+      Len, Chunks, Bits, Base : Ghdl_Index_Type;
+      A, Aall, B, Ball : Unsigned_32;
+      Pointer : p_vpi_vecval;
+   begin
+      Info := Get_Value_Obj (Obj);
+
+      case Info.Vtype is
+         when Vcd_Bitvector
+            | Vcd_Stdlogic_Vector =>
+            null; -- Continues below.
+         when Vcd_Stdlogic =>
+            E8_To_VV (Verilog_Wire_Val (Info).E8, Vec.aval, Vec.bval);
+            return;
+         when others =>
+            Vec.aval :=  To_Unsigned_32 (Integer (Vpi_Get_Value_Int (Obj)));
+            Vec.bval := 0;
+            return;
+      end case;
+
+      Len := Get_Wire_Length (Info);
+      Chunks := (Len + 31) / 32;
+      Pointer := Vec;
+      Base := 0;
+
+      for I in 0 .. Chunks - 1 loop
+         if I < Chunks - 1 then
+            Bits := 32;
+         else
+            Bits := Len mod 32;
+         end if;
+
+         Aall := 0;
+
+         if Info.Vtype = Vcd_Bitvector then
+            for J in reverse 0 .. Bits - 1 loop
+               A := Ghdl_B1'Pos (Verilog_Wire_Val (Info, Base + J).B1);
+               Aall := Aall * 2 + A;
+            end loop;
+            Pointer.bval := 0;
+         else
+            Ball := 0;
+            for J in reverse 0 .. Len - 1 loop
+               E8_To_VV (Verilog_Wire_Val (Info, J).E8, A, B);
+               Aall := Aall * 2 + A;
+               Ball := Ball * 2 + B;
+            end loop;
+            Pointer.bval := Ball;
+         end if;
+
+         Pointer.aval := Aall;
+         Base := Base + Bits;
+         Increment_p_vpi_vecval (Pointer);
+      end loop;
+   end Vpi_Get_Value_Vecval;
+
    function Vpi_Get_Value_Range (Expr : vpiHandle) return Integer
    is
       Info : Verilog_Wire_Info;
@@ -1101,7 +1299,8 @@ package body Grt.Vpi is
          when vpiRealVal =>     dbgPut_Line ("vpi_get_value: vpiRealVal");
          when vpiStringVal =>   dbgPut_Line ("vpi_get_value: vpiStringVal");
          when vpiTimeVal =>     dbgPut_Line ("vpi_get_value: vpiTimeVal");
-         when vpiVectorVal =>   dbgPut_Line ("vpi_get_value: vpiVectorVal");
+         when vpiVectorVal =>
+            Vpi_Get_Value_Vecval (Expr.Ref, Value.Vector);
          when vpiStrengthVal => dbgPut_Line ("vpi_get_value: vpiStrengthVal");
          when others =>         dbgPut_Line ("vpi_get_value: unknown mFormat");
       end case;
@@ -1275,6 +1474,50 @@ package body Grt.Vpi is
       Ii_Vpi_Put_Value (Info, Vec);
    end Ii_Vpi_Put_Value_Bin_Str;
 
+   procedure Ii_Vpi_Put_Value_Vecval (Info : Verilog_Wire_Info;
+                                      Len  : Ghdl_Index_Type;
+                                      Val : p_vpi_vecval)
+   is
+      Va, Vb : Unsigned_32;
+      Vec : Std_Ulogic_Array (0 .. Len - 1);
+      Chunks, Bits, Base : Ghdl_Index_Type;
+      Pointer : p_vpi_vecval;
+   begin
+      Chunks := (Len + 31) / 32;
+      Pointer := Val;
+      Base := 0;
+
+      for I in 0 .. Chunks - 1 loop
+         Va := Pointer.aval;
+         Vb := Pointer.bval;
+         if I < Chunks - 1 then
+            Bits := 32;
+         else
+            Bits := Len mod 32;
+         end if;
+         for J in 0 .. Bits - 1 loop
+            if (Va mod 2) = 0 then
+               if (Vb mod 2) = 0 then
+                  Vec (Base + J) := '0';
+               else
+                  Vec (Base + J) := 'Z';
+               end if;
+            else
+               if (Vb mod 2) = 0 then
+                  Vec (Base + J) := '1';
+               else
+                  Vec (Base + J) := 'X';
+               end if;
+            end if;
+            Va := Shift_Right_Arithmetic (Va, 1);
+            Vb := Shift_Right_Arithmetic (Vb, 1);
+         end loop;
+         Base := Base + Bits;
+         Increment_p_vpi_vecval (Pointer);
+      end loop;
+      Ii_Vpi_Put_Value (Info, Vec);
+   end Ii_Vpi_Put_Value_Vecval;
+
    -- vpiHandle vpi_put_value(vpiHandle obj, p_vpi_value value,
    --                         p_vpi_time when, int flags)
    function vpi_put_value (aObj : vpiHandle;
@@ -1286,8 +1529,6 @@ package body Grt.Vpi is
       pragma Unreferenced (aWhen);
       pragma Unreferenced (aFlags);
 
-      function To_Unsigned_32 is new Ada.Unchecked_Conversion
-        (Integer, Unsigned_32);
       Info : Verilog_Wire_Info;
       Len  : Ghdl_Index_Type;
    begin
@@ -1303,8 +1544,9 @@ package body Grt.Vpi is
       Reset_Error;
 
       -- A very simple write procedure for VPI.
-      -- Basically, it accepts bin_str values and converts to appropriate
-      -- types (only std_logic and bit values and vectors).
+      -- Basically, it accepts bin_str values, integers and vpiVecval
+      -- and converts to appropriate types (only integers, std_logic and
+      -- bit values and vectors).
 
       -- It'll use Set_Effective_Value procedure to update signals
 
@@ -1391,7 +1633,7 @@ package body Grt.Vpi is
          when vpiTimeVal =>
             dbgPut_Line("vpi_put_value: vpiTimeVal");
          when vpiVectorVal =>
-            dbgPut_Line("vpi_put_value: vpiVectorVal");
+            Ii_Vpi_Put_Value_Vecval (Info, Len, aValue.Vector);
          when vpiStrengthVal =>
             dbgPut_Line("vpi_put_value: vpiStrengthVal");
          when others =>
@@ -1410,7 +1652,6 @@ package body Grt.Vpi is
    is
       function To_Unsigned_64 is
          new Ada.Unchecked_Conversion (Std_Time, Unsigned_64);
-      Res : Std_Time;
       V : Unsigned_64;
    begin
       if Flag_Trace then
@@ -1421,22 +1662,25 @@ package body Grt.Vpi is
          Trace ("}) = ");
       end if;
 
-      if Obj /= null
-        or else Time.mType /= vpiSimTime
-      then
+      if Obj /= null then
          dbgPut_Line ("vpi_get_time: unhandled");
          return;
       end if;
 
-      Res := Current_Time;
+      V := To_Unsigned_64 (Current_Time);
 
-      V := To_Unsigned_64 (Res);
-      Time.mHigh := Unsigned_32 (V / 2 ** 32);
-      Time.mLow  := Unsigned_32 (V mod 2 ** 32);
-      Time.mReal := 0.0;
+      case Time.mType is
+         when vpiScaledRealTime =>
+            Time.mReal := Long_Float (V) * Time_Scale_Unit;
+         when vpiSimTime =>
+            Time.mHigh := Unsigned_32 (V / 2 ** 32);
+            Time.mLow  := Unsigned_32 (V mod 2 ** 32);
+         when others =>
+            null;
+      end case;
 
       if Flag_Trace then
-         Trace_Time (Res);
+         Trace_Time (Current_Time);
          Trace_Newline;
       end if;
    end vpi_get_time;
@@ -1472,7 +1716,13 @@ package body Grt.Vpi is
          Trace_Newline;
          Trace_Indent := Trace_Indent + 1;
       end if;
+
+      if Hand.Cb.Time /= null then
+         -- Supply the current simulation time.
+         vpi_get_time (null, Hand.Cb.Time);
+      end if;
       Res := Hand.Cb.Cb_Rtn (Hand.Cb'Access);
+
       if Flag_Trace then
          Trace_Indent := Trace_Indent - 1;
          Trace_Start ("vpi end callback ");
@@ -1531,13 +1781,6 @@ package body Grt.Vpi is
             --  counter has to be decremented and its value must be 0.  Time
             --  to free it.
             Free (Hand);
-         when cbValueChange =>
-            --  The handler hasn't been removed from the queue, unless the
-            --  user did it while the callback was executed.  If so, the
-            --  reference counter must now be 0 and we can free it.
-            if Hand.Cb_Refcnt = 0 then
-               Free (Hand);
-            end if;
          when others =>
             null;
       end case;
@@ -1545,13 +1788,43 @@ package body Grt.Vpi is
 
    procedure Call_Valuechange_Callback (Arg : System.Address)
    is
-      Hand : constant vpiHandle := To_vpiHandle (Arg);
+      Hand : vpiHandle := To_vpiHandle (Arg);
    begin
       if Verilog_Wire_Event (Hand.Cb_Wire) then
          --  Note: the call may remove H from the list, or even
          --  destroy it.
          --  However, we assume it doesn't remove the next callback...
-         Call_Callback (Arg);
+
+         --  Increase the reference counter as it is referenced by HAND.
+         Hand.Cb_Refcnt := Hand.Cb_Refcnt + 1;
+         if Hand.Cb.Value /= null then
+            -- Supply value before call.  May need to allocate vector space.
+            if (Hand.Cb.Value.Format = vpiVectorVal) then
+               -- Storage for the vector must be allocated first.
+               declare
+                  Len : Integer;
+               begin
+                  Len := Integer ((Get_Wire_Length (Hand.Cb_Wire) + 31) / 32);
+                  vpi_vec_callback_helper (Hand.Cb'Access, Len);
+                  Hand.Cb_Refcnt := Hand.Cb_Refcnt - 1;
+                  --  The handler hasn't been removed from the queue, unless
+                  --  the user did it while the callback was executed.
+                  --  If so, thereference counter must now be 0
+                  --  and we can free it.
+                  if Hand.Cb_Refcnt = 0 then
+                     Free (Hand);
+                  end if;
+                  return; -- Callback made.
+               end;
+            else
+               vpi_get_value (Hand.Cb.Obj, Hand.Cb.Value);
+            end if;
+         end if;
+         Execute_Callback (Hand);
+         Hand.Cb_Refcnt := Hand.Cb_Refcnt - 1;
+         if Hand.Cb_Refcnt = 0 then
+            Free (Hand);
+         end if;
       end if;
    end Call_Valuechange_Callback;
 
@@ -1598,6 +1871,17 @@ package body Grt.Vpi is
 
       --  There is one reference to the callback as it is registered.
       Res.Cb_Refcnt := 1;
+
+      --  Copy caller's Time and Value structs.
+
+      if Res.Cb.Time /= null then
+         Res.Cb.Time := new s_vpi_time;
+         Res.Cb.Time.all := Data.Time.all;
+      end if;
+      if Res.Cb.Value /= null then
+         Res.Cb.Value := new s_vpi_value (Data.Value.Format);
+         Res.Cb.Value.all := Data.Value.all;
+      end if;
 
       case Data.Reason is
          when cbEndOfCompile =>
@@ -1662,15 +1946,20 @@ package body Grt.Vpi is
            |  cbReadWriteSynch
            |  cbReadOnlySynch =>
             Delete_Callback (Ref.Cb_Handle);
-            Ref.Cb_Refcnt := Ref.Cb_Refcnt - 1;
-            if Ref.Cb_Refcnt > 0 then
-               --  Do not free REF.
-               Ref_Copy := null;
-            end if;
+         when cbAfterDelay =>
+            Unregister_Callback_At (Cb_After_Delay, Ref.Cb_Handle);
          when others =>
             Res := 0;
             Ref_Copy := null;
       end case;
+
+      if Res > 0 then
+         Ref.Cb_Refcnt := Ref.Cb_Refcnt - 1;
+         if Ref.Cb_Refcnt > 0 then
+            --  Do not free REF.
+            Ref_Copy := null;
+         end if;
+      end if;
 
       if Flag_Trace then
          if Ref_Copy = null then
