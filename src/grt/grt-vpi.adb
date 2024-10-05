@@ -1872,8 +1872,30 @@ package body Grt.Vpi is
       --  There is one reference to the callback as it is registered.
       Res.Cb_Refcnt := 1;
 
-      --  Copy caller's Time and Value structs.
+      --  Clear Data when ignored.
+      case Data.Reason is
+         when cbEndOfCompile
+           | cbStartOfSimulation
+           | cbEndOfSimulation =>
+            --  1364-2005 27.33.3 Simulator action or feature callbacks
+            --  The only fields in the s_cb_data structure that need to be
+            --  setup for simulation action or feature callbacks are the
+            --  reason, cb_rtn and user_data (if desired) fields.
+            Res.Cb.Value := null;
+            Res.Cb.Time := null;
+         when cbReadOnlySynch
+           | cbReadWriteSynch
+           | cbAfterDelay
+           | cbNextSimTime =>
+            --  1364-2005 27.33.2 Simulation time callbacks
+            --  The value fields are ignored for all reasons with simulation
+            --  time callbacks.
+            Res.Cb.Value := null;
+         when others =>
+            null;
+      end case;
 
+      --  Copy caller's Time and Value structs.
       if Res.Cb.Time /= null then
          Res.Cb.Time := new s_vpi_time;
          Res.Cb.Time.all := Data.Time.all;
