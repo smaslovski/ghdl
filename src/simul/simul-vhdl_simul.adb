@@ -61,6 +61,7 @@ with Grt.Processes;
 with Grt.Errors;
 with Grt.Severity;
 with Grt.Lib;
+with Grt.Stdio;
 with Grt.Astdio;
 with Grt.Analog_Solver;
 with Grt.Sundials;
@@ -298,14 +299,14 @@ package body Simul.Vhdl_Simul is
       end case;
    end Assign_Value_To_Signal;
 
-   type Force_Kind is (Force, Release);
-
    procedure Force_Signal_Value (Target: Memtyp;
                                  Kind : Force_Kind;
                                  Mode : Iir_Force_Mode;
                                  Val : Memtyp)
    is
       Sig : Ghdl_Signal_Ptr;
+      Fmode : Force_Mode;
+      Fval : Value_Union;
    begin
       case Target.Typ.Kind is
          when Type_Logic
@@ -315,22 +316,19 @@ package body Simul.Vhdl_Simul is
             Sig := Read_Sig (Target.Mem);
             case Kind is
                when Force =>
-                  case Mode is
-                     when Iir_Force_In =>
-                        Ghdl_Signal_Force_Effective_Any
-                          (Sig, To_Ghdl_Value (Val));
-                     when Iir_Force_Out =>
-                        Ghdl_Signal_Force_Driving_Any
-                          (Sig, To_Ghdl_Value (Val));
-                  end case;
+                  Fval := To_Ghdl_Value (Val);
                when Release =>
-                  case Mode is
-                     when Iir_Force_In =>
-                        Ghdl_Signal_Release_Eff (Sig);
-                     when Iir_Force_Out =>
-                        Ghdl_Signal_Release_Drv (Sig);
-                  end case;
+                  Fval.B1 := False;
+               when Deposite =>
+                  raise Internal_Error;
             end case;
+            case Mode is
+               when Iir_Force_In =>
+                  Fmode := Force_Effective;
+               when Iir_Force_Out =>
+                  Fmode := Force_Driving;
+            end case;
+            Ghdl_Signal_Force_Any (Sig, Kind, Fmode, Fval);
          when Type_Vector
            | Type_Array =>
             declare
@@ -1965,7 +1963,8 @@ package body Simul.Vhdl_Simul is
 
       if Synth.Flags.Flag_Trace_Statements then
          Put ("run process: ");
-         Elab.Vhdl_Debug.Disp_Instance_Path (Process.Top_Instance);
+         Elab.Vhdl_Debug.Disp_Instance_Path
+           (Grt.Stdio.stdout, Process.Top_Instance);
          Put_Line (" (" & Vhdl.Errors.Disp_Location (Process.Proc) & ")");
       end if;
 

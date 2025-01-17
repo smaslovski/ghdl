@@ -29,7 +29,6 @@ with Grt.Errors; use Grt.Errors;
 with Grt.Errors_Exec; use Grt.Errors_Exec;
 with Grt.Options;
 with Grt.Rtis_Addr; use Grt.Rtis_Addr;
-with Grt.Rtis_Utils;
 with Grt.Hooks;
 with Grt.Callbacks; use Grt.Callbacks;
 with Grt.Disp_Signals;
@@ -410,6 +409,10 @@ package body Grt.Processes is
          --  LRM93 8.1
          Error ("negative timeout clause", Filename, Line);
       end if;
+      if Current_Time > Std_Time'Last - Time then
+         --  Timeout beyond the end of simulation
+         return;
+      end if;
       Proc.Timeout := Current_Time + Time;
       Update_Process_First_Timeout (Proc);
    end Ghdl_Process_Wait_Set_Timeout;
@@ -667,12 +670,6 @@ package body Grt.Processes is
       return Res;
    end Compute_Next_Time;
 
-   procedure Disp_Process_Name (Stream : Grt.Stdio.FILEs; Proc : Process_Acc)
-   is
-   begin
-      Grt.Rtis_Utils.Put (Stream, Proc.Rti);
-   end Disp_Process_Name;
-
    procedure Disp_All_Processes
    is
       use Grt.Stdio;
@@ -682,7 +679,7 @@ package body Grt.Processes is
          declare
             Proc : constant Process_Acc := Process_Table.Table (I);
          begin
-            Disp_Process_Name (stdout, Proc);
+            Disp_Process_Name_Hook.all (stdout, Proc);
             New_Line (stdout);
             Put (stdout, "  State: ");
             case Proc.State is
@@ -737,7 +734,7 @@ package body Grt.Processes is
 
          if Grt.Options.Trace_Processes then
             Grt.Astdio.Put ("run process ");
-            Disp_Process_Name (Stdio.stdout, Proc);
+            Disp_Process_Name_Hook.all (Stdio.stdout, Proc);
             Grt.Astdio.Put (" [");
             Grt.Astdio.Put (Stdio.stdout, To_Address (Proc.This));
             Grt.Astdio.Put ("]");
@@ -792,7 +789,7 @@ package body Grt.Processes is
                end if;
                if Grt.Options.Trace_Processes then
                   Grt.Astdio.Put ("run process ");
-                  Disp_Process_Name (Stdio.stdout, Proc);
+                  Disp_Process_Name_Hook.all (Stdio.stdout, Proc);
                   Grt.Astdio.Put (" [");
                   Grt.Astdio.Put (Stdio.stdout, To_Address (Proc.This));
                   Grt.Astdio.Put ("]");

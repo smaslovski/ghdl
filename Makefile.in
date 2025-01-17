@@ -485,7 +485,7 @@ LIBGHDL_GRT_OBJS= pic/grt-cstdio.o pic/grt-cdynload.o
 lib/$(libghdl_name): $(GRT_SRC_DEPS) $(LIBGHDL_GRT_OBJS) version.ads force
 #	Use -g for gnatlink so that the binder file is not removed.  We need
 #	it for libghdl.a
-	$(GNATMAKE) -I- -aI. -D pic -z libghdl -o $@ -gnat12 $(GNATFLAGS) $(PIC_FLAGS) $(LIBGHDL_INCFLAGS) -bargs -shared -Llibghdl_ -largs -g -shared $(SHLIB_FLAGS) $(filter-out -static,$(LDFLAGS)) $(LIBGHDL_GRT_OBJS)
+	$(GNATMAKE) -I- -aI. -D pic -z libghdl -o $@ -gnat12 $(GNATFLAGS) $(PIC_FLAGS) $(LIBGHDL_INCFLAGS) -bargs -shared -Llibghdl_ -largs -R -g -shared $(SHLIB_FLAGS) $(filter-out -static,$(LDFLAGS)) $(LIBGHDL_GRT_OBJS)
 #       On windows, gnatmake (via Osint.Executable_Name) always appends .exe
 #       Adjust.  (Other solution: use gnatmake for compilation and binding,
 #       then use gnatlink directly for linking).
@@ -549,6 +549,13 @@ copy.libghdl.deps.so:
 
 uninstall.libghdl:
 	$(RM) $(DESTDIR)$(libdir)/$(libghdl_name)
+	$(RM) $(DESTDIR)$(libdir)/libghdl.a
+	$(RM) $(DESTDIR)$(libdir)/libghdl.link
+	$(RM) $(DESTDIR)$(libdir)/libghdl$(SOEXT)
+	$(RM) $(DESTDIR)$(libdir)/libghw.dll
+	$(RM) $(DESTDIR)$(libdir)/libghw$(SOEXT)
+	$(RM) $(incdirsuffix)/ghdl/synth.h
+	$(RM) $(incdirsuffix)/ghdl/synth_gates.h
 
 ################ ghwdump #################################################
 
