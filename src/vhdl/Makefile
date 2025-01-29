@@ -38,6 +38,7 @@ GEN_FILES=vhdl-nodes.adb \
   ../../pyGHDL/libghdl/errorout.py \
   ../../pyGHDL/libghdl/std_names.py \
   ../errorout_def.rs \
+  ../std_names.rs \
   nodes_def.rs
 
 NODES_FLAGS=--node-file=vhdl-nodes.ads --field-file=vhdl-nodes.adb.in \
@@ -121,9 +122,14 @@ vhdl-elocations_meta.adb: vhdl-elocations_meta.adb.in vhdl-elocations.ads $(DEPS
 	$(PNODESRS) $(NODES_FLAGS) errorout > $@
 	chmod -w $@
 
+../std_names.rs: $(PNODESRS) ../std_names.ads
+	$(RM) $@
+	$(PNODESRS) $(NODES_FLAGS) std_names > $@
+	chmod -w $@
+
 nodes_def.rs: $(PNODESRS) vhdl-nodes.ads vhdl-nodes.adb.in
 	$(RM) $@
-	$(PNODESRS) $(NODES_FLAGS) nodes > $@
+	$(PNODESRS) $(NODES_FLAGS) vhdl-nodes > $@
 	chmod -w $@
 
 clean:

@@ -872,6 +872,76 @@ def do_meta_body():
             print(l)
 
 
+def read_enum(filename, type_name, prefix, g=lambda m: m.group(1)):
+    """Read an enumeration declaration :param type_name:
+    from :param filename:."""
+    pat_decl = re.compile(r"   type {0} is$".format(type_name))
+    pat_enum = re.compile(r"      {0}(\w+),?( *-- .*)?$".format(prefix))
+    pat_comment = re.compile(r" *-- .*$")
+    lr = linereader(filename)
+    while not pat_decl.match(lr.get()):
+        pass
+    line = lr.get()
+    if line != "     (\n":
+        raise ParseError(lr, f"{filename}:{lr.lineno}: missing open parenthesis")
+    toks = []
+    while True:
+        line = lr.get()
+        if line == "     );\n":
+            break
+        m = pat_enum.match(line)
+        if m:
+            toks.append(g(m))
+        elif pat_comment.match(line):
+            pass
+        elif line == "\n":
+            pass
+        else:
+            print(line, file=sys.stderr)
+            raise ParseError(
+                lr,
+                f"{filename}:{ lr.lineno}: incorrect line in enum {type_name}"
+            )
+    return toks
+
+def read_std_names():
+    pat_name_first = re.compile(r"   Name_(\w+)\s+: constant Name_Id := (\d+);")
+    pat_name_def = re.compile(r"   Name_(\w+)\s+:\s+constant Name_Id :=\s+Name_(\w+)( \+ (\d+))?;")
+    dict = {}
+    lr = linereader("../std_names.ads")
+    while True:
+        line = lr.get()
+        m = pat_name_first.match(line)
+        if m:
+            name_def = m.group(1)
+            val = int(m.group(2))
+            dict[name_def] = val
+            res = [(name_def, val)]
+            break
+    val_max = 1
+    while True:
+        line = lr.get()
+        if line == "end Std_Names;\n":
+            break
+        if line.endswith(":=\n"):
+            line = line.rstrip() + lr.get()
+        m = pat_name_def.match(line)
+        if m:
+            name_def = m.group(1)
+            name_ref = m.group(2)
+            val = m.group(4)
+            if not val:
+                val = 0
+            val_ref = dict.get(name_ref, None)
+            if not val_ref:
+                raise ParseError(lr, f"name {name_ref} not found")
+            val = val_ref + int(val)
+            val_max = max(val_max, val)
+            dict[name_def] = val
+            res.append((name_def, val))
+    return res
+
+
 actions = {
     "disp-nodes": do_disp_nodes,
     "disp-kinds": do_disp_kinds,

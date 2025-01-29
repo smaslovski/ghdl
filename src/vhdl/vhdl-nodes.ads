@@ -1240,6 +1240,7 @@ package Vhdl.Nodes is
    --
    --   Get/Set_Has_Is (Flag7)
    --
+   --  Should always be true
    --   Get/Set_End_Has_Reserved_Id (Flag8)
    --
    --   Get/Set_End_Has_Identifier (Flag9)
@@ -4683,6 +4684,12 @@ package Vhdl.Nodes is
    -- Only for Iir_Kind_External_Signal_Name:
    --   Get/Set_After_Drivers_Flag (Flag5)
    --
+   -- Only for Iir_Kind_External_Signal_Name:
+   --   Get/Set_Guarded_Signal_Flag (Flag8)
+   --
+   -- Only for Iir_Kind_External_Signal_Name:
+   --   Get/Set_Signal_Kind (Flag9)
+   --
    --   Get/Set_Expr_Staticness (State1)
    --
    --   Get/Set_Name_Staticness (State2)
@@ -6737,7 +6744,13 @@ package Vhdl.Nodes is
    --    set to IMPURE.  Only at the end of body analysis and only if the
    --    callee list is empty, the state can be set either to MAYBE_IMPURE or
    --    PURE.
-   type Iir_Pure_State is (Unknown, Pure, Maybe_Impure, Impure);
+   type Iir_Pure_State is
+     (
+      Unknown,
+      Pure,
+      Maybe_Impure,
+      Impure
+     );
 
    --  State of subprograms for validity of use in all-sensitized process.
    --  INVALID_SIGNAL means that the subprogram is in a package and
@@ -6754,7 +6767,12 @@ package Vhdl.Nodes is
    --    all-sensitized process but there is no need to track this call.
    --  UNKNOWN means that the state is not yet defined.
    type Iir_All_Sensitized is
-     (Unknown, No_Signal, Read_Signal, Invalid_Signal);
+     (
+      Unknown,
+      No_Signal,
+      Read_Signal,
+      Invalid_Signal
+     );
 
    --  Constraint state of a type.
    --  See LRM08 5.1 for definition.

@@ -1,7 +1,14 @@
 use std::{env, ffi, fs, io, iter, os};
+mod types;
 mod errorout_def;
 mod errorout;
 mod vhdl;
+mod verilog;
+mod files_map;
+mod std_names;
+
+use vhdl::nodes_def::Node as VhdlNode;
+use files_map::SourceFileEntry;
 
 #[derive(Clone, Copy)]
 #[repr(u8)]
@@ -16,16 +23,8 @@ enum VhdlStd {
 
 #[repr(transparent)]
 #[derive(Clone, Copy, PartialEq)]
-struct NameId {
-    v: u32,
-}
-
-#[repr(transparent)]
-#[derive(Copy, Clone, PartialEq)]
-struct VhdlNode {
-    v: u32,
-}
-const NULL_VHDLNODE: VhdlNode = VhdlNode { v: 0 };
+struct NameId(u32);
+// const NULL_NAMEID: NameId = NameId(0);
 
 extern "C" {
     #[link_name = "flags__vhdl_std"]
@@ -72,6 +71,9 @@ extern "C" {
 
     #[link_name = "name_table__get_name_ptr"]
     fn get_name_ptr(id: NameId) -> *const u8;
+
+    #[link_name = "files_map__read_source_file_normalize"]
+    fn read_source_file_normalize(dir: NameId, file: NameId) -> SourceFileEntry;
 
     #[link_name = "ghdlcomp__compile_elab_top"]
     fn compile_elab_top(
@@ -121,16 +123,13 @@ extern "C" {
     #[link_name = "libraries__save_work_library"]
     fn save_work_library();
 
-    #[link_name = "vhdl__nodes__get_identifier"]
-    fn get_identifier(n: VhdlNode) -> NameId;
-
     //  From binder file
     #[link_name = "ghdl_rust_init"]
     fn ghdl_rust_init();
 }
 
 impl NameId {
-    const NULL: NameId = NameId { v: 0 };
+    const NULL: NameId = NameId(0);
 
     fn from_string(s: &str) -> NameId {
         unsafe { get_identifier_with_len(s.as_ptr(), s.len() as u32) }
@@ -149,13 +148,8 @@ impl NameId {
     }
 }
 
-impl VhdlNode {
-    fn get_identifier(&self) -> NameId {
-        unsafe { get_identifier(*self) }
-    }
-}
 fn library_to_filename(lib: VhdlNode, std: VhdlStd) -> String {
-    let mut res = lib.get_identifier().to_string();
+    let mut res = lib.identifier().to_string();
 
     res.push_str("-obj");
     match std {
@@ -176,6 +170,7 @@ fn library_to_filename(lib: VhdlNode, std: VhdlStd) -> String {
     res
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 enum WarnValue {
     Default,
@@ -401,14 +396,14 @@ fn analyze(args: &[String], save: bool) -> Result<(), ParseStatus> {
 }
 
 trait Command {
-    fn get_command(&self) -> &'static [&'static str];
+    fn get_names(&self) -> &'static [&'static str];
     fn execute(&self, args: &[String]) -> Result<(), ParseStatus>;
 }
 
 struct CommandAnalyze {}
 
 impl Command for CommandAnalyze {
-    fn get_command(&self) -> &'static [&'static str] {
+    fn get_names(&self) -> &'static [&'static str] {
         return &["analyze", "-a"];
     }
 
@@ -420,7 +415,7 @@ impl Command for CommandAnalyze {
 struct CommandSyntax {}
 
 impl Command for CommandSyntax {
-    fn get_command(&self) -> &'static [&'static str] {
+    fn get_names(&self) -> &'static [&'static str] {
         return &["syntax", "-s"];
     }
 
@@ -432,7 +427,7 @@ impl Command for CommandSyntax {
 struct CommandImport {}
 
 impl Command for CommandImport {
-    fn get_command(&self) -> &'static [&'static str] {
+    fn get_names(&self) -> &'static [&'static str] {
         return &["import", "-i"];
     }
 
@@ -492,7 +487,7 @@ impl Command for CommandImport {
 struct CommandRemove {}
 
 impl Command for CommandRemove {
-    fn get_command(&self) -> &'static [&'static str] {
+    fn get_names(&self) -> &'static [&'static str] {
         return &["--remove"];
     }
 
@@ -563,7 +558,7 @@ fn analyze_elab(args: &[String]) -> Result<Vec<String>, ParseStatus> {
         flag_only_elab_warnings = true;
     };
     let top = unsafe { compile_elab_top(NameId::NULL, unit, arch, false) };
-    if top == NULL_VHDLNODE {
+    if top == VhdlNode::NULL {
         if expect_failure {
             return Result::Err(ParseStatus::CommandExpectedError);
         }
@@ -582,7 +577,7 @@ fn analyze_elab(args: &[String]) -> Result<Vec<String>, ParseStatus> {
 struct CommandElab {}
 
 impl Command for CommandElab {
-    fn get_command(&self) -> &'static [&'static str] {
+    fn get_names(&self) -> &'static [&'static str] {
         return &["-e", "elab", "--elab"];
     }
 
@@ -598,7 +593,7 @@ impl Command for CommandElab {
 struct CommandRun {}
 
 impl Command for CommandRun {
-    fn get_command(&self) -> &'static [&'static str] {
+    fn get_names(&self) -> &'static [&'static str] {
         return &["-r", "run", "--elab-run"];
     }
 
@@ -637,18 +632,62 @@ impl Command for CommandRun {
     }
 }
 
+struct CommandVerilog2Comp {}
+
+impl Command for CommandVerilog2Comp {
+    fn get_names(&self) -> &'static [&'static str] {
+        return &["verilog2comp"];
+    }
+
+    fn execute(&self, args: &[String]) -> Result<(), ParseStatus> {
+        unsafe {
+            verilog::errors_initialize();
+            verilog::scans_init_paths();
+            verilog::sem_scopes_init();
+            verilog::sem_types_create_basetypes();
+            verilog::vpi_initialize();
+            verilog::flag_keep_parentheses = true;
+        }
+
+        for arg in &args[1..] {
+            //  Parse verilog file
+            let id = NameId::from_string(arg);
+            unsafe {
+                let sfe = read_source_file_normalize(NameId::NULL, id);
+                if sfe == SourceFileEntry::NULL {
+                    eprintln!("Cannot read {}", arg);
+                    return Result::Err(ParseStatus::OptionError);
+                }
+
+                //  compile
+                let vlg_top = verilog::parse_file(sfe);
+
+                verilog::sem_compilation_unit(vlg_top);
+
+                //  convert to vhdl
+                let chain = verilog::export_file(vlg_top);
+
+                //  print (the first one)
+                vhdl::disp_vhdl(chain);
+            }
+        }
+        return Err(ParseStatus::CommandError)
+    }
+}
+
 const COMMANDS: &[&dyn Command] = &[
     &CommandAnalyze {},
     &CommandSyntax {},
     &CommandElab {},
     &CommandRun {},
     &CommandRemove {},
+    &CommandVerilog2Comp {},
 ];
 
-fn get_parser(args: &[String]) -> Result<(), ParseStatus> {
-    for parser in COMMANDS {
-        if parser.get_command().into_iter().any(|&cmd| cmd == args[0]) {
-            return parser.execute(args);
+fn execute_command(args: &[String]) -> Result<(), ParseStatus> {
+    for cmd in COMMANDS {
+        if cmd.get_names().into_iter().any(|&name| name == args[0]) {
+            return cmd.execute(args);
         }
     }
     return Err(ParseStatus::UnknownCommand);
@@ -694,6 +733,7 @@ fn main() {
         ghdl_rust_init();
     }
 
+    //  Collect and expand options, read response files
     let init_args : Vec<String> = env::args().collect();
     let args : Vec<String>;
     match expand_args(init_args) {
@@ -718,7 +758,8 @@ fn main() {
         options_initialize();
     };
 
-    match get_parser(&args[1..]) {
+    //  Execute the command
+    match execute_command(&args[1..]) {
         Ok(()) => {}
         Err(ParseStatus::UnknownCommand) => {
             eprintln!("unknown command '{command}', try {progname} help");
