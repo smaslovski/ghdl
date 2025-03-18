@@ -3181,16 +3181,32 @@ package body Vhdl.Evaluation is
       Expr : constant Iir := Get_Expression (Conv);
       Val : Iir;
       Val_Type : Iir;
-      Conv_Type : Iir;
+      Conv_Type, Conv_Btype : Iir;
       Res : Iir;
    begin
       Val := Eval_Static_Expr (Expr);
       Val_Type := Get_Base_Type (Get_Type (Val));
-      Conv_Type := Get_Base_Type (Get_Type (Conv));
-      if Conv_Type = Val_Type then
+      Conv_Type := Get_Type (Conv);
+      Conv_Btype := Get_Base_Type (Conv_Type);
+      if Conv_Btype = Val_Type then
+         --  Same type, nothing to convert.
          Res := Build_Constant (Val, Orig);
+
+         if Get_Kind (Conv_Btype) = Iir_Kind_Array_Type_Definition then
+            case Get_Constraint_State (Conv_Type) is
+               when Unconstrained =>
+                  --  This is a no-op.  Reuse the subtype of the expression.
+                  Set_Type (Res, Get_Type (Val));
+               when Fully_Constrained =>
+                  --  Constraints are set by the type mark.
+                  null;
+               when Partially_Constrained =>
+                  --  TODO
+                  null;
+            end case;
+         end if;
       else
-         case Get_Kind (Conv_Type) is
+         case Get_Kind (Conv_Btype) is
             when Iir_Kind_Integer_Type_Definition =>
                case Get_Kind (Val_Type) is
                   when Iir_Kind_Integer_Type_Definition =>
@@ -3538,7 +3554,7 @@ package body Vhdl.Evaluation is
    is
       Suffix : constant Iir := Get_Suffix (Expr);
       Len : constant Int64 := Eval_Discrete_Range_Length (Suffix);
-      Rng : constant Iir := Eval_Static_Range (Suffix);
+      Idx_Type, Idx_Rng : Iir;
       Prefix : Iir;
       Dir : Direction_Type;
       Left, Right : Iir;
@@ -3548,12 +3564,15 @@ package body Vhdl.Evaluation is
          return Build_String (Null_String8, 0, Expr);
       end if;
 
+      Eval_Range_Bounds (Suffix, Dir, Left, Right);
+
       Prefix := Get_Prefix (Expr);
       Prefix := Eval_Static_Expr (Prefix);
 
-      Eval_Range_Bounds (Suffix, Dir, Left, Right);
+      Idx_Type := Get_Index_Type (Get_Type (Prefix), 0);
+      Idx_Rng := Get_Range_Constraint (Idx_Type);
 
-      Pos := Eval_Pos_In_Range (Rng, Left);
+      Pos := Eval_Pos_In_Range (Idx_Rng, Left);
 
       case Get_Kind (Prefix) is
          when Iir_Kind_String_Literal8 =>

@@ -32,6 +32,15 @@ package Grt.Vhdl_Types is
    for Ghdl_Dir_Type use (Dir_To => 0, Dir_Downto => 1);
    for Ghdl_Dir_Type'Size use 8;
 
+   subtype Std_Integer_32 is Ghdl_I32;
+   subtype Std_Integer_64 is Ghdl_I64;
+
+   type Std_Integer_32_Acc is access Std_Integer_32;
+   pragma Convention (C, Std_Integer_32_Acc);
+
+   type Std_Integer_64_Acc is access Std_Integer_64;
+   pragma Convention (C, Std_Integer_64_Acc);
+
    subtype Std_Integer is Ghdl_I32;
 
    type Std_Integer_Acc is access Std_Integer;

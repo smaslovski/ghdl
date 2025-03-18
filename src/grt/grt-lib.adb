@@ -44,7 +44,8 @@ package body Grt.Lib is
    end Ghdl_Memcpy;
 
    procedure Do_Report (Msg : String;
-                        Str : Std_String_Ptr;
+                        Base : Std_String_Basep;
+                        Len : Ghdl_Index_Type;
                         Default_Str : String;
                         Severity : Integer;
                         Loc : Ghdl_Location_Ptr)
@@ -77,8 +78,8 @@ package body Grt.Lib is
             Diag_C ("???");
       end case;
       Diag_C ("): ");
-      if Str /= null then
-         Diag_C (Str);
+      if Base /= null then
+         Diag_C (Base, Len);
       else
          Diag_C (Default_Str);
       end if;
@@ -100,56 +101,68 @@ package body Grt.Lib is
         or else (Policy = Disable_Asserts_At_Time_0 and Current_Time = 0);
    end Is_Assert_Disabled;
 
-   procedure Ghdl_Assert_Failed
-     (Str : Std_String_Ptr; Severity : Integer; Loc : Ghdl_Location_Ptr) is
+   procedure Ghdl_Assert_Failed (Base : Std_String_Basep;
+                                 Len : Ghdl_Index_Type;
+                                 Severity : Integer;
+                                 Loc : Ghdl_Location_Ptr) is
    begin
       if Is_Assert_Disabled (Asserts_Policy) then
          return;
       end if;
-      Do_Report ("assertion", Str, "Assertion violation", Severity, Loc);
+      Do_Report ("assertion", Base, Len, "Assertion violation", Severity, Loc);
    end Ghdl_Assert_Failed;
 
-   procedure Ghdl_Ieee_Assert_Failed
-     (Str : Std_String_Ptr; Severity : Integer; Loc : Ghdl_Location_Ptr) is
+   procedure Ghdl_Ieee_Assert_Failed (Base : Std_String_Basep;
+                                      Len : Ghdl_Index_Type;
+                                      Severity : Integer;
+                                      Loc : Ghdl_Location_Ptr) is
    begin
       if Is_Assert_Disabled (Ieee_Asserts) then
          return;
       end if;
-      Do_Report ("assertion", Str, "Assertion violation", Severity, Loc);
+      Do_Report ("assertion", Base, Len, "Assertion violation", Severity, Loc);
    end Ghdl_Ieee_Assert_Failed;
 
-   procedure Ghdl_Psl_Assert_Failed
-     (Str : Std_String_Ptr; Severity : Integer; Loc : Ghdl_Location_Ptr) is
+   procedure Ghdl_Psl_Assert_Failed (Base : Std_String_Basep;
+                                     Len : Ghdl_Index_Type;
+                                     Severity : Integer;
+                                     Loc : Ghdl_Location_Ptr) is
    begin
-      Do_Report ("psl assertion", Str, "Assertion violation", Severity, Loc);
+      Do_Report
+        ("psl assertion", Base, Len, "Assertion violation", Severity, Loc);
    end Ghdl_Psl_Assert_Failed;
 
    procedure Ghdl_Psl_Assume_Failed (Loc : Ghdl_Location_Ptr) is
    begin
-      Do_Report ("psl assumption", null, "Assumption violation",
+      Do_Report ("psl assumption", null, 0, "Assumption violation",
                  Grt.Severity.Error_Severity, Loc);
    end Ghdl_Psl_Assume_Failed;
 
-   procedure Ghdl_Psl_Cover
-     (Str : Std_String_Ptr; Severity : Integer; Loc : Ghdl_Location_Ptr) is
+   procedure Ghdl_Psl_Cover (Base : Std_String_Basep;
+                             Len : Ghdl_Index_Type;
+                             Severity : Integer;
+                             Loc : Ghdl_Location_Ptr) is
    begin
-      Do_Report ("psl cover", Str, "sequence covered", Severity, Loc);
+      Do_Report ("psl cover", Base, Len, "sequence covered", Severity, Loc);
    end Ghdl_Psl_Cover;
 
-   procedure Ghdl_Psl_Cover_Failed
-     (Str : Std_String_Ptr; Severity : Integer; Loc : Ghdl_Location_Ptr) is
+   procedure Ghdl_Psl_Cover_Failed (Base : Std_String_Basep;
+                                    Len : Ghdl_Index_Type;
+                                    Severity : Integer;
+                                    Loc : Ghdl_Location_Ptr) is
    begin
       if Flag_Psl_Report_Uncovered then
          Do_Report ("psl cover failure",
-                    Str, "sequence not covered", Severity, Loc);
+                    Base, Len, "sequence not covered", Severity, Loc);
       end if;
    end Ghdl_Psl_Cover_Failed;
 
-   procedure Ghdl_Report (Str : Std_String_Ptr;
+   procedure Ghdl_Report (Base : Std_String_Basep;
+                          Len : Ghdl_Index_Type;
                           Severity : Integer;
-                          Loc      : Ghdl_Location_Ptr) is
+                          Loc : Ghdl_Location_Ptr) is
    begin
-      Do_Report ("report", Str, "Assertion violation", Severity, Loc);
+      Do_Report ("report", Base, Len, "Assertion violation", Severity, Loc);
    end Ghdl_Report;
 
    procedure Ghdl_Program_Error (Filename : Ghdl_C_String;
@@ -246,29 +259,53 @@ package body Grt.Lib is
       Error_E_Call_Stack (Bt);
    end Ghdl_Integer_Index_Check_Failed;
 
-   function Ghdl_I32_Exp (V : Ghdl_I32; E : Std_Integer) return Ghdl_I32
+   function Ghdl_I32_Exp_32 (V : Ghdl_I32; E : Std_Integer_32) return Ghdl_I32
    is
       Res : Ghdl_I32;
       Ovf : Boolean;
    begin
-      Grt.Arith.Exp_I32 (V, E, Res, Ovf);
+      Grt.Arith.Exp_I32 (V, Ghdl_I64 (E), Res, Ovf);
       if Ovf then
          Error ("overflow in exponentiation");
       end if;
       return Res;
-   end Ghdl_I32_Exp;
+   end Ghdl_I32_Exp_32;
 
-   function Ghdl_I64_Exp (V : Ghdl_I64; E : Std_Integer) return Ghdl_I64
+   function Ghdl_I32_Exp_64 (V : Ghdl_I32; E : Std_Integer_64) return Ghdl_I32
+   is
+      Res : Ghdl_I32;
+      Ovf : Boolean;
+   begin
+      Grt.Arith.Exp_I32 (V, Ghdl_I64 (E), Res, Ovf);
+      if Ovf then
+         Error ("overflow in exponentiation");
+      end if;
+      return Res;
+   end Ghdl_I32_Exp_64;
+
+   function Ghdl_I64_Exp_32 (V : Ghdl_I64; E : Std_Integer_32) return Ghdl_I64
    is
       Res : Ghdl_I64;
       Ovf : Boolean;
    begin
-      Grt.Arith.Exp_I64 (V, E, Res, Ovf);
+      Grt.Arith.Exp_I64 (V, Ghdl_I64 (E), Res, Ovf);
       if Ovf then
          Error ("overflow in exponentiation");
       end if;
       return Res;
-   end Ghdl_I64_Exp;
+   end Ghdl_I64_Exp_32;
+
+   function Ghdl_I64_Exp_64 (V : Ghdl_I64; E : Std_Integer_64) return Ghdl_I64
+   is
+      Res : Ghdl_I64;
+      Ovf : Boolean;
+   begin
+      Grt.Arith.Exp_I64 (V, Ghdl_I64 (E), Res, Ovf);
+      if Ovf then
+         Error ("overflow in exponentiation");
+      end if;
+      return Res;
+   end Ghdl_I64_Exp_64;
 
    function Ghdl_I32_Div (L, R : Ghdl_I32) return Ghdl_I32
    is
@@ -360,10 +397,10 @@ package body Grt.Lib is
       C_Free (Ptr);
    end Ghdl_Free_Mem;
 
-   function Ghdl_Real_Exp (X : Ghdl_Real; Exp : Ghdl_I32)
+   function Ghdl_Real_Exp_64 (X : Ghdl_Real; Exp : Ghdl_I64)
      return Ghdl_Real
    is
-      R : Ghdl_I32;
+      R : Ghdl_I64;
       Res : Ghdl_Real;
       P : Ghdl_Real;
    begin
@@ -396,7 +433,13 @@ package body Grt.Lib is
          end if;
          return 1.0 / Res;
       end if;
-   end Ghdl_Real_Exp;
+   end Ghdl_Real_Exp_64;
+
+   function Ghdl_Real_Exp_32 (X : Ghdl_Real; Exp : Ghdl_I32)
+                             return Ghdl_Real is
+   begin
+      return Ghdl_Real_Exp_64 (X, Ghdl_I64 (Exp));
+   end Ghdl_Real_Exp_32;
 
    function Textio_Read_Real (Str : Std_String_Ptr) return Ghdl_F64
    is

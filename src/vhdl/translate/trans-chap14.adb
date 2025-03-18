@@ -24,6 +24,7 @@ with Trans_Decls; use Trans_Decls;
 with Trans.Chap3;
 with Trans.Chap6;
 with Trans.Chap7;
+with Trans.Chap8;
 with Trans.Rtis;
 with Trans.Helpers2; use Trans.Helpers2;
 with Trans.Foreach_Non_Composite;
@@ -987,6 +988,7 @@ package body Trans.Chap14 is
       Pinfo       : constant Type_Info_Acc := Get_Info (Prefix_Type);
       Subprg      : O_Dnode;
       Assoc       : O_Assoc_List;
+      Param       : Mnode;
    begin
       case Type_Mode_Scalar (Pinfo.Type_Mode) is
          when Type_Mode_B1 =>
@@ -1006,11 +1008,11 @@ package body Trans.Chap14 is
          when Type_Mode_F64 =>
             Subprg := Ghdl_Value_F64;
       end case;
+      Param := Chap7.Translate_Expression
+        (Get_Parameter (Attr), String_Type_Definition);
+      Stabilize (Param);
       Start_Association (Assoc, Subprg);
-      New_Association
-        (Assoc,
-         Chap7.Translate_Expression (Get_Parameter (Attr),
-           String_Type_Definition));
+      Chap8.New_Association_String_Base_Len (Assoc, Param);
       case Type_Mode_Scalar (Pinfo.Type_Mode) is
          when Type_Mode_B1
             | Type_Mode_E8

@@ -868,6 +868,16 @@ package body Translation is
       Finish_Subprogram_Decl (Interfaces, Force_Eff);
    end Create_Signal_Subprograms;
 
+   procedure Create_String_Base_Len_Params (Interfaces : in out O_Inter_List)
+   is
+      Param : O_Dnode;
+   begin
+      New_Interface_Decl
+        (Interfaces, Param, Wki_Base, Std_String_Basep_Node);
+      New_Interface_Decl
+        (Interfaces, Param, Wki_Length, Ghdl_Index_Type);
+   end Create_String_Base_Len_Params;
+
    --  procedure __ghdl_image_NAME (res : std_string_ptr_node;
    --                               val : VAL_TYPE;
    --                               rti : ghdl_rti_access);
@@ -900,8 +910,7 @@ package body Translation is
       Start_Function_Decl
         (Interfaces, Get_Identifier ("__ghdl_value_" & Name),
          O_Storage_External, Val_Type);
-      New_Interface_Decl
-        (Interfaces, Param, Wki_Val, Std_String_Ptr_Node);
+      Create_String_Base_Len_Params (Interfaces);
       if Has_Td then
          New_Interface_Decl
            (Interfaces, Param, Get_Identifier ("rti"), Rtis.Ghdl_Rti_Access);
@@ -979,6 +988,7 @@ package body Translation is
    --  Do internal declarations that need std.standard declarations.
    procedure Post_Initialize
    is
+      Id : O_Ident;
       Interfaces : O_Inter_List;
       Rec : O_Element_List;
       Param : O_Dnode;
@@ -990,6 +1000,7 @@ package body Translation is
       Info := Get_Info (String_Type_Definition);
       Std_String_Node := Info.Ortho_Type (Mode_Value);
       Std_String_Ptr_Node := Info.Ortho_Ptr_Type (Mode_Value);
+      Std_String_Basep_Node := Info.B.Base_Ptr_Type (Mode_Value);
 
       Std_Integer_Otype :=
         Get_Ortho_Type (Integer_Type_Definition, Mode_Value);
@@ -1015,8 +1026,7 @@ package body Translation is
          begin
             Start_Procedure_Decl
               (Interfaces, Get_Identifier (Name), O_Storage_External);
-            New_Interface_Decl
-              (Interfaces, Param, Get_Identifier ("msg"), Std_String_Ptr_Node);
+            Create_String_Base_Len_Params (Interfaces);
             New_Interface_Decl
               (Interfaces, Param, Get_Identifier ("severity"),
                Get_Ortho_Type (Severity_Level_Type_Definition, Mode_Value));
@@ -1090,10 +1100,10 @@ package body Translation is
 
       --  function __ghdl_text_read_length (file : __ghdl_file_index;
       --                                    str : std_string_ptr)
-      --     return std__standard_integer;
+      --     return __ghdl_index_type;
       Start_Function_Decl
         (Interfaces, Get_Identifier ("__ghdl_text_read_length"),
-         O_Storage_External, Std_Integer_Otype);
+         O_Storage_External, Ghdl_Index_Type);
       New_Interface_Decl (Interfaces, Param, Get_Identifier ("file"),
                           Ghdl_File_Index_Type);
       New_Interface_Decl (Interfaces, Param, Get_Identifier ("str"),
@@ -1129,9 +1139,13 @@ package body Translation is
       --  function __ghdl_real_exp (left : std__standard__real;
       --                            right : std__standard__integer)
       --   return std__standard__real;
+      if Flag_Integer_64 then
+         Id := Get_Identifier ("__ghdl_real_exp_64");
+      else
+         Id := Get_Identifier ("__ghdl_real_exp_32");
+      end if;
       Start_Function_Decl
-        (Interfaces, Get_Identifier ("__ghdl_real_exp"), O_Storage_External,
-         Std_Real_Otype);
+        (Interfaces, Id, O_Storage_External, Std_Real_Otype);
       New_Interface_Decl (Interfaces, Param, Wki_Left, Std_Real_Otype);
       New_Interface_Decl (Interfaces, Param, Wki_Right, Std_Integer_Otype);
       Finish_Subprogram_Decl (Interfaces, Ghdl_Real_Exp);
@@ -1139,9 +1153,13 @@ package body Translation is
       --  function __ghdl_i32_exp (left : ghdl_i32;
       --                           right : std__standard__integer)
       --   return ghdl_i32;
+      if Flag_Integer_64 then
+         Id := Get_Identifier ("__ghdl_i32_exp_64");
+      else
+         Id := Get_Identifier ("__ghdl_i32_exp_32");
+      end if;
       Start_Function_Decl
-        (Interfaces, Get_Identifier ("__ghdl_i32_exp"), O_Storage_External,
-         Ghdl_I32_Type);
+        (Interfaces, Id, O_Storage_External, Ghdl_I32_Type);
       New_Interface_Decl (Interfaces, Param, Wki_Left, Ghdl_I32_Type);
       New_Interface_Decl (Interfaces, Param, Wki_Right, Std_Integer_Otype);
       Finish_Subprogram_Decl (Interfaces, Ghdl_I32_Exp);
@@ -1149,9 +1167,13 @@ package body Translation is
       --  function __ghdl_i64_exp (left : ghdl_i64;
       --                           right : std__standard__integer)
       --   return ghdl_i64;
+      if Flag_Integer_64 then
+         Id := Get_Identifier ("__ghdl_i64_exp_64");
+      else
+         Id := Get_Identifier ("__ghdl_i64_exp_32");
+      end if;
       Start_Function_Decl
-        (Interfaces, Get_Identifier ("__ghdl_i64_exp"), O_Storage_External,
-         Ghdl_I64_Type);
+        (Interfaces, Id, O_Storage_External, Ghdl_I64_Type);
       New_Interface_Decl (Interfaces, Param, Wki_Left, Ghdl_I64_Type);
       New_Interface_Decl (Interfaces, Param, Wki_Right, Std_Integer_Otype);
       Finish_Subprogram_Decl (Interfaces, Ghdl_I64_Exp);
@@ -1543,7 +1565,7 @@ package body Translation is
       --  function __ghdl_create_signal_e8 (init_val : ghdl_i32_type)
       --                                    return __ghdl_signal_ptr;
       --  procedure __ghdl_signal_simple_assign_e8 (sign : __ghdl_signal_ptr;
-      --                                            val : __ghdl_integer);
+      --                                            val : __ghdl_XX);
       Create_Signal_Subprograms ("e8", Ghdl_I32_Type,
                                  Ghdl_Create_Signal_E8,
                                  Ghdl_Signal_Init_E8,
@@ -1559,7 +1581,7 @@ package body Translation is
       --  function __ghdl_create_signal_e32 (init_val : ghdl_i32_type)
       --                                     return __ghdl_signal_ptr;
       --  procedure __ghdl_signal_simple_assign_e32 (sign : __ghdl_signal_ptr;
-      --                                             val : __ghdl_integer);
+      --                                             val : __ghdl_XX);
       Create_Signal_Subprograms ("e32", Ghdl_I32_Type,
                                  Ghdl_Create_Signal_E32,
                                  Ghdl_Signal_Init_E32,
