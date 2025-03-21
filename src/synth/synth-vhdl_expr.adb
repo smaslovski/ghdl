@@ -133,7 +133,22 @@ package body Synth.Vhdl_Expr is
       end case;
    end Is_Positive;
 
-   procedure From_Std_Logic (Enum : Int64; Val : out Uns32; Zx : out Uns32) is
+   Vec_Std_Logic_Val : constant Uns32 := 0
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_1_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_H_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_U_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_X_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_D_Pos;
+
+   Vec_Std_Logic_Zx : constant Uns32 := 0
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_U_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_X_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_D_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_Z_Pos
+     + 2**Vhdl.Ieee.Std_Logic_1164.Std_Logic_W_Pos;
+
+   procedure From_Std_Logic
+     (Enum : Ghdl_U8; Val : out Uns32; Zx : out Uns32) is
    begin
       case Enum is
          when Vhdl.Ieee.Std_Logic_1164.Std_Logic_0_Pos
@@ -159,7 +174,7 @@ package body Synth.Vhdl_Expr is
       end case;
    end From_Std_Logic;
 
-   procedure From_Bit (Enum : Int64; Val : out Uns32) is
+   procedure From_Bit (Enum : Ghdl_U8; Val : out Uns32) is
    begin
       if Enum = 0 then
          Val := 0;
@@ -171,7 +186,7 @@ package body Synth.Vhdl_Expr is
    end From_Bit;
 
    procedure To_Logic
-     (Enum : Int64; Etype : Type_Acc; Val : out Uns32; Zx : out Uns32) is
+     (Enum : Ghdl_U8; Etype : Type_Acc; Val : out Uns32; Zx : out Uns32) is
    begin
       if Etype = Logic_Type then
          pragma Assert (Etype.Kind = Type_Logic);
@@ -222,7 +237,7 @@ package body Synth.Vhdl_Expr is
    end Bit2logvec;
 
    --  Likewise for std_logic
-   procedure Logic2logvec (Val : Int64;
+   procedure Logic2logvec (Val : Ghdl_U8;
                            Off : Uns32;
                            Vec : in out Logvec_Array;
                            Has_Zx : in out Boolean)
@@ -277,7 +292,7 @@ package body Synth.Vhdl_Expr is
             --  Scalar bits cannot be cut.
             pragma Assert (Typ.W = 1);
             pragma Assert (Off = 0 and W >= 1);
-            Logic2logvec (Int64 (Read_U8 (Mem)), Vec_Off, Vec, Has_Zx);
+            Logic2logvec (Read_U8 (Mem), Vec_Off, Vec, Has_Zx);
             --  One bit read and written.
             Vec_Off := Vec_Off + 1;
             W := W - 1;
@@ -326,7 +341,7 @@ package body Synth.Vhdl_Expr is
                   when Type_Logic =>
                      for I in Off .. Len - 1 loop
                         Logic2logvec
-                          (Int64 (Read_U8 (Mem + Size_Type (Vlen - 1 - I))),
+                          (Read_U8 (Mem + Size_Type (Vlen - 1 - I)),
                            Vec_Off, Vec, Has_Zx);
                         Vec_Off := Vec_Off + 1;
                      end loop;
@@ -383,6 +398,44 @@ package body Synth.Vhdl_Expr is
       Off1 : Uns32;
       W1 : Width;
    begin
+      --  Optimize (for large memories)
+      --  Conditions:
+      --   * no offsets
+      --   * multiple of logic_32
+      --   * array/vector without holes in representation
+      if Off = 0
+        and then Vec_Off = 0
+        and then (W mod 32) = 0
+        and then W > 128
+        and then Is_Linear_Type (Val.Typ)
+      then
+         declare
+            pragma Suppress (Index_Check);
+            pragma Suppress (Access_Check);
+            Lenw : constant Uns32 := W / 32;
+            El : Natural;
+            Va, Zx : Uns32;
+            V : Logic_32;
+         begin
+            for I in 0 .. Lenw - 1 loop
+               V := (0, 0);
+               for J in Uns32 range 0 .. 31 loop
+                  El := Natural (Val.Mem (Size_Type (I * 32 + J)) and 16#f#);
+                  Va := Shift_Right (Vec_Std_Logic_Val, El) and 1;
+                  V.Val := Shift_Left (V.Val, 1) or Va;
+                  Zx := Shift_Right (Vec_Std_Logic_Zx, El) and 1;
+                  V.Zx := Shift_Left (V.Zx, 1) or Zx;
+               end loop;
+               Vec (Digit_Index (Lenw - 1 - I)) := V;
+               if V.Zx /= 0 then
+                  Has_Zx := True;
+               end if;
+            end loop;
+            Vec_Off := W;
+            return;
+         end;
+      end if;
+
       Off1 := Off;
       W1 := W;
       Value2logvec (Val.Mem, Val.Typ, Off1, W1, Vec, Vec_Off, Has_Zx);

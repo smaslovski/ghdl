@@ -1090,6 +1090,17 @@ package body Elab.Vhdl_Objtypes is
       end case;
    end Get_Array_Flat_Length;
 
+   function Is_Linear_Type (Typ : Type_Acc) return Boolean is
+   begin
+      if Typ.Kind = Type_Vector then
+         return Typ.Arr_El.Kind = Type_Logic;
+      elsif Typ.Kind = Type_Array then
+         return Is_Linear_Type (Typ.Arr_El);
+      else
+         return False;
+      end if;
+   end Is_Linear_Type;
+
    function Get_Type_Width (Atype : Type_Acc) return Uns32 is
    begin
       pragma Assert (Atype.Kind /= Type_Unbounded_Array);
@@ -1362,9 +1373,9 @@ package body Elab.Vhdl_Objtypes is
    procedure Copy_Memory (Dest : Memory_Ptr; Src : Memory_Ptr; Sz : Size_Type)
    is
    begin
-      for I in 1 .. Sz loop
-         Dest (I - 1) := Src (I - 1);
-      end loop;
+      if Sz /= 0 then
+         Dest (0 .. Sz - 1) := Src (0 .. Sz - 1);
+      end if;
    end Copy_Memory;
 
    function Unshare (Src : Memtyp; Pool : Areapool_Acc) return Memtyp

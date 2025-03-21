@@ -367,6 +367,9 @@ package Elab.Vhdl_Objtypes is
    --  sub-elements.
    function Get_Array_Flat_Length (Typ : Type_Acc) return Iir_Index32;
 
+   --  Return True iff TYP is linear: array or vectors composed of logic type.
+   function Is_Linear_Type (Typ : Type_Acc) return Boolean;
+
    --  Return length of dimension DIM of type T.
 --   function Get_Bound_Length (T : Type_Acc; Dim : Dim_Type) return Uns32;
    function Get_Bound_Length (T : Type_Acc) return Uns32;
@@ -406,6 +409,8 @@ package Elab.Vhdl_Objtypes is
    function Is_Equal (L, R : Memtyp) return Boolean;
 
    procedure Copy_Memory (Dest : Memory_Ptr; Src : Memory_Ptr; Sz : Size_Type);
+   --  Further optimization: could directly use memcpy
+   --   pragma Import (C, Copy_Memory, "memcpy");
 
    function Unshare (Src : Memtyp) return Memtyp;
    function Unshare (Src : Memtyp; Pool : Areapool_Acc) return Memtyp;
