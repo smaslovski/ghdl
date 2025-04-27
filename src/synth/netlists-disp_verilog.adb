@@ -48,8 +48,29 @@ package body Netlists.Disp_Verilog is
       Wr_Uns32 (Get_Sname_Version (N));
    end Put_Name_Version;
 
+   --  Return True IFF N is an escaped identifier.
+   function Is_Escaped_Sname (N : Sname) return Boolean is
+   begin
+      if N = No_Sname then
+         return False;
+      end if;
+
+      case Get_Sname_Kind (N) is
+         when Sname_User =>
+            return Is_Escaped_Sname (Get_Sname_Prefix (N));
+         when Sname_System =>
+            return False;
+         when Sname_Field =>
+            return True;
+         when Sname_Version
+           | Sname_Unique =>
+            return False;
+      end case;
+   end Is_Escaped_Sname;
+
    procedure Put_Name_1 (N : Sname)
    is
+      Kind : constant Sname_Kind := Get_Sname_Kind (N);
       Prefix : Sname;
    begin
       --  Do not crash on No_Name.
@@ -58,37 +79,43 @@ package body Netlists.Disp_Verilog is
          return;
       end if;
 
-      Prefix := Get_Sname_Prefix (N);
-      if Prefix /= No_Sname then
-         Put_Name_1 (Prefix);
-         Wr ("_");
+      if Kind = Sname_User then
+         if Kind in Sname_Kind_Prefix then
+            Prefix := Get_Sname_Prefix (N);
+            if Prefix /= No_Sname then
+               Put_Name_1 (Prefix);
+               Wr ("_");
+            end if;
+         end if;
       end if;
 
-      case Get_Sname_Kind (N) is
+      case Kind is
          when Sname_User =>
             Put_Id (Get_Sname_Suffix (N));
-         when Sname_Artificial =>
+         when Sname_System =>
             Put_Id (Get_Sname_Suffix (N));
-         when Sname_Version =>
+         when Sname_Field =>
+            Put_Name_1 (Get_Sname_Prefix (N));
+            Wr ("[");
+            Put_Id (Get_Sname_Suffix (N));
+            Wr ("]");
+         when Sname_Version
+           | Sname_Unique =>
             Wr ("n");
             Put_Name_Version (N);
       end case;
    end Put_Name_1;
 
-   procedure Put_Name (N : Sname) is
+   procedure Put_Name (N : Sname)
+   is
+      Is_Escaped : constant Boolean := Is_Escaped_Sname (N);
    begin
-      --  Do not crash on No_Name.
-      if N = No_Sname then
-         Wr ("*nil*");
-         return;
+      if Is_Escaped then
+         Wr ("\");
       end if;
-
-      if Get_Sname_Kind (N) = Sname_User
-        and then Get_Sname_Prefix (N) = No_Sname
-      then
-         Put_Id (Get_Sname_Suffix (N));
-      else
-         Put_Name_1 (N);
+      Put_Name_1 (N);
+      if Is_Escaped then
+         Wr (" ");
       end if;
    end Put_Name;
 
@@ -101,7 +128,7 @@ package body Netlists.Disp_Verilog is
       end if;
 
       --  Interface names are not versionned.
-      if Get_Sname_Kind (N) in Sname_User .. Sname_Artificial  then
+      if Get_Sname_Kind (N) in Sname_System .. Sname_Field  then
          Put_Name (N);
       else
          Wr ("*err*");
@@ -120,24 +147,24 @@ package body Netlists.Disp_Verilog is
          Idx : constant Port_Idx := Get_Port_Idx (N);
          M : Module;
          Inst_Name : Sname;
-         Port_Name : Sname;
       begin
          if Is_Self_Instance (Inst) then
             --  For ports of the current module, simply use the port name.
             Put_Name (Get_Input_Desc (Get_Module (Inst), Idx).Name);
          else
             Inst_Name := Get_Instance_Name (Inst);
-            Put_Name (Inst_Name);
             M := Get_Module (Inst);
             case Get_Id (M) is
                when Id_Signal
                  | Id_Isignal =>
                   --  No suffix for signals (it's 'o').
-                  null;
+                  Put_Name (Inst_Name);
                when others =>
-                  Port_Name := Get_Output_Desc (M, Idx).Name;
-                  Wr ("_");
-                  Put_Interface_Name (Port_Name);
+                  Wr ("\");
+                  Put_Name_1 (Inst_Name);
+                  Wr (".");
+                  Put_Name_1 (Get_Output_Desc (M, Idx).Name);
+                  Wr (" ");
             end case;
          end if;
       end;
@@ -206,12 +233,37 @@ package body Netlists.Disp_Verilog is
       end if;
 
       Parent := Get_Input_Parent (Inp);
-      if Get_Id (Parent) = Id_Nop then
-         return Get_Output (Parent, 0);
-      else
-         return No_Net;
-      end if;
+      case Get_Id (Parent) is
+         when Id_Nop
+           | Id_Signal =>
+            return Get_Output (Parent, 0);
+         when others =>
+            return No_Net;
+      end case;
    end Is_Nop_Drv;
+
+   --  Return True iff the driver for INP is the output of a user defined
+   --  module which only drives INP
+   function Has_Single_User_Driver (Inp : Input) return Boolean
+   is
+      O : constant Net := Get_Driver (Inp);
+      Inst : Instance;
+   begin
+      if O = No_Net then
+         return False;
+      end if;
+      if Get_First_Sink (O) /= Inp
+        or else Get_Next_Sink (Inp) /= No_Input
+      then
+         --  Not a single driver.
+         return False;
+      end if;
+      Inst := Get_Net_Parent (O);
+      if Get_Id (Inst) < Id_User_None then
+         return False;
+      end if;
+      return True;
+   end Has_Single_User_Driver;
 
    procedure Disp_Instance_Gate (Inst : Instance)
    is
@@ -230,8 +282,7 @@ package body Netlists.Disp_Verilog is
       Name := Get_Module_Name (Imod);
       if Get_Id (Imod) < Id_User_None then
          Wr (" gate_");
-         pragma Assert (Get_Sname_Kind (Name) = Sname_Artificial
-                          and then Get_Sname_Prefix (Name) = No_Sname);
+         pragma Assert (Get_Sname_Kind (Name) = Sname_System);
          Put_Id (Get_Sname_Suffix (Name));
       else
          Put_Name (Name);
@@ -501,6 +552,7 @@ package body Netlists.Disp_Verilog is
          when Id_Extract
            | Id_Dyn_Extract
            | Id_Dyn_Insert
+           | Id_Bmux
            | Id_Utrunc
            | Id_Strunc =>
             return True;
@@ -1058,6 +1110,15 @@ package body Netlists.Disp_Verilog is
                            "    endcase" & NL, Inst);
          when Id_Pmux =>
             Disp_Pmux (Inst);
+         when Id_Bmux =>
+            declare
+               O : constant Net := Get_Output (Inst, 0);
+               Wd : constant Width := Get_Width (O);
+            begin
+               Disp_Template
+                 ("  assign \o0 = \i0[\i1 * \n0 +: \n0]; //(Bmux)" & NL,
+                  Inst, (0 => Wd));
+            end;
          when Id_Add =>
             Disp_Template ("  assign \o0 = \i0 + \i1;" & NL, Inst);
          when Id_Sub =>
@@ -1384,6 +1445,10 @@ package body Netlists.Disp_Verilog is
             when Id_Nop =>
                --  Inserted by netlists.rename to avoid escaping.
                null;
+            when Id_Signal =>
+               if not Has_Single_User_Driver (Get_Input (Inst, 0)) then
+                  Disp_Instance_Inline (Inst);
+               end if;
             when others =>
                Disp_Instance_Inline (Inst);
          end case;

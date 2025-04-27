@@ -58,7 +58,7 @@ package Netlists.Utils is
    function Get_Input_Instance (Inst : Instance; Idx : Port_Idx)
                                return Instance;
 
-   --  Return True iff ID describe a constant.
+   --  Return True iff ID describe a constant value (without X/Z).
    function Is_Const_Net (N : Net) return Boolean;
 
    --  Assuming that N is a const net, return the value (for small values).
@@ -100,6 +100,7 @@ package Netlists.Utils is
    function Skip_Signal (N : Net) return Net;
 
    function Clog2 (W : Width) return Width;
+   function Is_Pow2 (W : Width) return Boolean;
 
    --  Copy attribtues of SRC to DEST.
    procedure Copy_Instance_Attributes (Dest : Instance; Src : Instance);

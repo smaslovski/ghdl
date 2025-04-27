@@ -128,7 +128,7 @@ package body Netlists.Utils is
       if Get_Width (N) = 0 then
          return True;
       end if;
-      return Get_Id (Get_Net_Parent (N)) in Constant_Module_Id;
+      return Get_Id (Get_Net_Parent (N)) in Constant_Defined_Module_Id;
    end Is_Const_Net;
 
    function Get_Net_Uns64 (N : Net) return Uns64
@@ -310,4 +310,9 @@ package body Netlists.Utils is
    begin
       return Uns32 (Mutils.Clog2 (Uns64 (W)));
    end Clog2;
+
+   function Is_Pow2 (W : Width) return Boolean is
+   begin
+      return (W and (W - 1)) = 0;
+   end Is_Pow2;
 end Netlists.Utils;

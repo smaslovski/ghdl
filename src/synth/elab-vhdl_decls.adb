@@ -37,8 +37,17 @@ package body Elab.Vhdl_Decls is
       Inter : Node;
       Typ : Type_Acc;
    begin
+      if Get_Implicit_Definition (Subprg) < Iir_Predefined_None then
+         --  Implicit operators directly use the type, not a subtype.
+         --  So there is no need to iterate over interfaces.
+         return;
+      end if;
       if Is_Second_Subprogram_Specification (Subprg) then
-         --  Already handled.
+         --  Already handled (by the primary specification).
+         return;
+      end if;
+      if not Get_Use_Flag (Subprg) then
+         --  Not used.
          return;
       end if;
 
@@ -303,17 +312,18 @@ package body Elab.Vhdl_Decls is
    begin
       Mark_Expr_Pool (Marker);
 
-      if Get_Subtype_Indication (Decl) /= Null_Node then
-         Obj_Typ := Elab_Declaration_Type (Syn_Inst, Decl);
-      else
-         Obj_Typ := null;
-      end if;
-
       if Get_Kind (Name) in Iir_Kinds_External_Name then
+         --  Alias have no subtype indication, but the external name has one.
+         Obj_Typ := Elab_Declaration_Type (Syn_Inst, Name);
          Base := Exec_External_Name (Syn_Inst, Name);
          Typ := Base.Typ;
          Off := No_Value_Offsets;
       else
+         if Get_Subtype_Indication (Decl) /= Null_Node then
+            Obj_Typ := Elab_Declaration_Type (Syn_Inst, Decl);
+         else
+            Obj_Typ := null;
+         end if;
          Synth_Assignment_Prefix (Syn_Inst, Name, Base, Typ, Off);
       end if;
       if Base /= No_Valtyp then

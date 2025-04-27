@@ -51,8 +51,29 @@ package body Netlists.Disp_Vhdl is
       Wr_Uns32 (Get_Sname_Version (N));
    end Put_Name_Version;
 
-   procedure Put_Name_1 (N : Sname)
+   --  Return True IFF N is an extended identifier.
+   function Is_Extended_Sname (N : Sname) return Boolean is
+   begin
+      if N = No_Sname then
+         return False;
+      end if;
+
+      case Get_Sname_Kind (N) is
+         when Sname_User =>
+            return Is_Extended_Sname (Get_Sname_Prefix (N));
+         when Sname_System =>
+            return False;
+         when Sname_Field =>
+            return True;
+         when Sname_Version
+           | Sname_Unique =>
+            return False;
+      end case;
+   end Is_Extended_Sname;
+
+   procedure Put_Name_Inner (N : Sname)
    is
+      Kind : constant Sname_Kind := Get_Sname_Kind (N);
       Prefix : Sname;
    begin
       --  Do not crash on No_Name.
@@ -61,37 +82,45 @@ package body Netlists.Disp_Vhdl is
          return;
       end if;
 
-      Prefix := Get_Sname_Prefix (N);
-      if Prefix /= No_Sname then
-         Put_Name_1 (Prefix);
-         Wr ("_");
+      if Kind = Sname_User then
+         if Kind in Sname_Kind_Prefix then
+            Prefix := Get_Sname_Prefix (N);
+            if Prefix /= No_Sname then
+               Put_Name_Inner (Prefix);
+               Wr ("_");
+            end if;
+         end if;
       end if;
 
       case Get_Sname_Kind (N) is
          when Sname_User =>
             Put_Id (Get_Sname_Suffix (N));
-         when Sname_Artificial =>
+         when Sname_System =>
             Put_Id (Get_Sname_Suffix (N));
-         when Sname_Version =>
+         when Sname_Field =>
+            Put_Name_Inner (Get_Sname_Prefix (N));
+            Wr ("[");
+            Put_Id (Get_Sname_Suffix (N));
+            Wr ("]");
+         when Sname_Version
+           | Sname_Unique =>
             Wr ("n");
             Put_Name_Version (N);
       end case;
-   end Put_Name_1;
+   end Put_Name_Inner;
 
-   procedure Put_Name (N : Sname) is
+   procedure Put_Name (N : Sname)
+   is
+      Is_Extended : constant Boolean := Is_Extended_Sname (N);
    begin
-      --  Do not crash on No_Name.
-      if N = No_Sname then
-         Wr ("*nil*");
-         return;
+      if Is_Extended then
+         Wr ("\");
       end if;
 
-      if Get_Sname_Kind (N) = Sname_User
-        and then Get_Sname_Prefix (N) = No_Sname
-      then
-         Put_Id (Get_Sname_Suffix (N));
-      else
-         Put_Name_1 (N);
+      Put_Name_Inner (N);
+
+      if Is_Extended then
+         Wr ("\");
       end if;
    end Put_Name;
 
@@ -104,7 +133,7 @@ package body Netlists.Disp_Vhdl is
       end if;
 
       --  Interface names are not versionned.
-      if Get_Sname_Kind (N) in Sname_User .. Sname_Artificial  then
+      if Get_Sname_Kind (N) in Sname_System .. Sname_Field then
          Put_Name (N);
       else
          Wr ("*err*");
@@ -124,14 +153,12 @@ package body Netlists.Disp_Vhdl is
          M : Module;
          Id : Module_Id;
          Inst_Name : Sname;
-         Port_Name : Sname;
       begin
          if Is_Self_Instance (Inst) then
             --  For ports of the current module, simply use the port name.
             Put_Name (Get_Input_Desc (Get_Module (Inst), Idx).Name);
          else
             Inst_Name := Get_Instance_Name (Inst);
-            Put_Name (Inst_Name);
             M := Get_Module (Inst);
             Id := Get_Id (M);
             case Id is
@@ -139,11 +166,13 @@ package body Netlists.Disp_Vhdl is
                  | Id_Iinout
                  | Id_User_None .. Module_Id'Last =>
                   --  Gates with multiple outputs.
-                  Wr ("_c_");
-                  Port_Name := Get_Output_Desc (M, Idx).Name;
-                  Put_Interface_Name (Port_Name);
+                  Wr ("\");
+                  Put_Name_Inner (Inst_Name);
+                  Wr (".");
+                  Put_Name_Inner (Get_Output_Desc (M, Idx).Name);
+                  Wr ("\");
                when others =>
-                  null;
+                  Put_Name (Inst_Name);
             end case;
          end if;
       end;
@@ -171,8 +200,7 @@ package body Netlists.Disp_Vhdl is
       Name := Get_Module_Name (Imod);
       if Get_Id (Imod) < Id_User_None then
          Wr ("gsynth.gate_");
-         pragma Assert (Get_Sname_Kind (Name) = Sname_Artificial
-                          and then Get_Sname_Prefix (Name) = No_Sname);
+         pragma Assert (Get_Sname_Kind (Name) = Sname_System);
          Put_Id (Get_Sname_Suffix (Name));
       else
          --  Even for blackbox, we assume the definition is in the work
@@ -458,6 +486,8 @@ package body Netlists.Disp_Vhdl is
       end loop;
    end Disp_Memory_Init;
 
+   --  Some gates require a name as an input (and not a bit-string) as they
+   --  use indexed names or slice names.
    function Need_Name (Inst : Instance) return Boolean
    is
       Id : constant Module_Id := Get_Id (Inst);
@@ -467,7 +497,8 @@ package body Netlists.Disp_Vhdl is
            | Id_Dyn_Extract
            | Id_Dyn_Insert
            | Id_Utrunc
-           | Id_Strunc =>
+           | Id_Strunc
+           | Id_Bmux =>
             return True;
          when Id_User_None .. Module_Id'Last =>
             return True;
@@ -1025,13 +1056,8 @@ package body Netlists.Disp_Vhdl is
                if Step /= 1 then
                   Disp_Template
                     ("  \o0 <= std_logic_vector (resize (resize (", Inst);
-                  if Get_Width (Get_Input_Net (Inst, 0)) = 1 then
-                     Disp_Template ("unsigned'(0 => \i0)", Inst);
-                  else
-                     Disp_Template ("\ui0", Inst);
-                  end if;
                   Disp_Template
-                    (", \n0) * \up0, \n0));" & NL, Inst, (0 => Wd));
+                    ("\ui0, \n0) * \up0, \n0));" & NL, Inst, (0 => Wd));
                else
                   Disp_Template ("  \o0 <= \i0;" & NL, Inst);
                end if;
@@ -1177,6 +1203,21 @@ package body Netlists.Disp_Vhdl is
             Wr_Line (" when others;");
          when Id_Pmux =>
             Disp_Pmux (Inst);
+         when Id_Bmux =>
+            declare
+               O : constant Net := Get_Output (Inst, 0);
+               Wd : constant Width := Get_Width (O);
+            begin
+               Disp_Template ("  \o0 <= \i0", Inst);
+               if Wd = 1 then
+                  Disp_Template (" (to_integer (\ui1));" & NL, Inst);
+               else
+                  Disp_Template
+                    (" (to_integer (\ui1) * \n0 + \n1 "
+                     & "downto to_integer (\ui1) * \n0);" & NL,
+                     Inst, (0 => Wd, 1 => Wd - 1));
+               end if;
+            end;
          when Id_Add =>
             if Get_Width (Get_Output (Inst, 0)) = 1 then
                Disp_Template ("  \o0 <= \i0 xor \i1;  --  add" & NL, Inst);

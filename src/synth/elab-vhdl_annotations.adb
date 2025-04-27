@@ -406,6 +406,10 @@ package body Elab.Vhdl_Annotations is
       Spec : constant Iir := Get_Subprogram_Specification (Subprg);
       Subprg_Info : constant Sim_Info_Acc := Get_Ann (Spec);
    begin
+      if not Get_Use_Flag (Spec) then
+         return;
+      end if;
+
       Set_Ann (Subprg, Subprg_Info);
 
       --  Do not annotate body of foreign subprograms.
@@ -685,6 +689,7 @@ package body Elab.Vhdl_Annotations is
             if (Get_Implicit_Definition (Decl)
                   not in Iir_Predefined_Operators)
               and then not Is_Second_Subprogram_Specification (Decl)
+              and then Get_Use_Flag (Decl)
             then
                Annotate_Subprogram_Interfaces_Type (Block_Info, Decl);
                Annotate_Subprogram_Specification (Block_Info, Decl);
@@ -694,10 +699,16 @@ package body Elab.Vhdl_Annotations is
             Annotate_Subprogram_Body (Block_Info, Decl);
 
          when Iir_Kind_Object_Alias_Declaration =>
-            if Has_Owned_Subtype_Indication (Decl) then
-               Annotate_Type_Definition (Block_Info, Get_Type (Decl));
-            end if;
-            Create_Object_Info (Block_Info, Decl);
+            declare
+               Name : constant Iir := Get_Name (Decl);
+            begin
+               if Get_Kind (Name) in Iir_Kinds_External_Name then
+                  Annotate_External_Name_Type (Block_Info, Name);
+               elsif Has_Owned_Subtype_Indication (Decl) then
+                  Annotate_Type_Definition (Block_Info, Get_Type (Decl));
+               end if;
+               Create_Object_Info (Block_Info, Decl);
+            end;
 
          when Iir_Kind_Non_Object_Alias_Declaration =>
             null;

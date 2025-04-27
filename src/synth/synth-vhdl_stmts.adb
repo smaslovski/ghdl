@@ -983,14 +983,19 @@ package body Synth.Vhdl_Stmts is
    begin
       Mark_Expr_Pool (Marker);
       Targ := Synth_Target (Inst, Get_Target (Stmt));
-      Val := Synth_Expression_With_Type
-        (Inst, Get_Expression (Stmt), Targ.Targ_Type);
-      if Val = No_Valtyp then
+      if Targ.Targ_Type /= null then
+         Val := Synth_Expression_With_Type
+           (Inst, Get_Expression (Stmt), Targ.Targ_Type);
+         if Val = No_Valtyp then
+            Set_Error (Inst);
+            --  Avoid warnings about non-assigned variable.
+            Val := Create_Value_Default (Targ.Targ_Type);
+         end if;
+         Synth_Assignment (Inst, Targ, Val, Stmt);
+      else
          Set_Error (Inst);
-         --  Avoid warnings about non-assigned variable.
-         Val := Create_Value_Default (Targ.Targ_Type);
       end if;
-      Synth_Assignment (Inst, Targ, Val, Stmt);
+
       Release_Expr_Pool (Marker);
    end Synth_Variable_Assignment;
 
@@ -3870,6 +3875,9 @@ package body Synth.Vhdl_Stmts is
       C.Nbr_Ret := C.Nbr_Ret + 1;
    end Synth_Return_Statement;
 
+   procedure Disp_A_Frame_Err is new
+     Elab.Debugger.Gen_Disp_A_Frame (Simple_IO.Put_Err);
+
    procedure Exec_Failed_Assertion (Syn_Inst : Synth_Instance_Acc;
                                     Stmt : Node)
    is
@@ -3978,6 +3986,18 @@ package body Synth.Vhdl_Stmts is
          else
             Put_Line_Err (Value_To_String (Rep));
          end if;
+
+         declare
+            Inst : Synth_Instance_Acc;
+         begin
+            Inst := Get_Caller_Instance (Syn_Inst);
+            while Inst /= null loop
+               Simple_IO.Put_Err (" called from: ");
+               Disp_A_Frame_Err (Inst);
+               Simple_IO.New_Line_Err;
+               Inst := Get_Caller_Instance (Inst);
+            end loop;
+         end;
       end if;
 
       Release_Expr_Pool (Marker);
