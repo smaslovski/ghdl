@@ -977,7 +977,7 @@ package body Netlists.Memories is
       --  1. Gather all ports.
       Gather_Ports (Sig, Ports);
 
-      --  2. From ports, get the index.
+      --  2. From ports, get the memidx instance.
       for I in Ports'Range loop
          declare
             P   : constant Instance := Ports (I);
@@ -1985,10 +1985,10 @@ package body Netlists.Memories is
       for I in Idx .. Idx + Len - 1 loop
          if Clk /= No_Net then
             Rd_Inst := Build_Mem_Rd_Sync (Ctxt, Tails (I), Addr, Clk, En,
-                                          Offs (Idx + 1) - Offs (Idx));
+                                          Offs (I + 1) - Offs (I));
          else
             Rd_Inst := Build_Mem_Rd (Ctxt, Tails (I), Addr,
-                                     Offs (Idx + 1) - Offs (Idx));
+                                     Offs (I + 1) - Offs (I));
          end if;
          Tails (I) := Get_Output (Rd_Inst, 0);
          Outs (I) := Get_Output (Rd_Inst, 1);

@@ -1493,6 +1493,7 @@ package body Simul.Vhdl_Compile is
    is
       Res : Uns32;
       N : Node;
+      B : Node;
    begin
       pragma Assert (Get_Kind (Bod) = Iir_Kind_Generate_Statement_Body);
       Res := 0;
@@ -1500,10 +1501,13 @@ package body Simul.Vhdl_Compile is
          when Iir_Kind_If_Generate_Statement =>
             N := Stmt;
             while N /= Null_Node loop
-               if Get_Generate_Statement_Body (N) = Bod then
+               B := Get_Generate_Statement_Body (N);
+               if B = Bod then
                   return Res;
                end if;
-               Res := Res + 1;
+               if Get_Use_Flag (B) then
+                  Res := Res + 1;
+               end if;
                N := Get_Generate_Else_Clause (N);
             end loop;
             raise Internal_Error;
@@ -1511,10 +1515,13 @@ package body Simul.Vhdl_Compile is
             N := Get_Case_Statement_Alternative_Chain (Stmt);
             while N /= Null_Node loop
                if not Get_Same_Alternative_Flag (N) then
-                  if Get_Associated_Block (N) = Bod then
+                  B := Get_Associated_Block (N);
+                  if B = Bod then
                      return Res;
                   end if;
-                  Res := Res + 1;
+                  if Get_Use_Flag (B) then
+                     Res := Res + 1;
+                  end if;
                end if;
                N := Get_Chain (N);
             end loop;
