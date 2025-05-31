@@ -2,9 +2,10 @@
 use crate::types::*;
 use crate::files_map::{Location, SourceFileEntry};
 use crate::NameId;
+use crate::str_table::String8Id;
 
-#[derive(Copy, Clone, PartialEq, PartialOrd)]
 #[repr(u16)]
+#[derive(Copy, Clone, PartialEq, PartialOrd)]
 pub enum Kind {
     Unused,
     Error,
@@ -1347,6 +1348,7 @@ impl Kind {
 
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Mode {
     Unknown_Mode,
     Linkage_Mode,
@@ -1376,6 +1378,7 @@ impl Mode {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum ScalarSize {
     Scalar_8,
     Scalar_16,
@@ -1399,6 +1402,7 @@ impl ScalarSize {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Staticness {
     Unknown,
     None,
@@ -1422,6 +1426,7 @@ impl Staticness {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Iir_Constraint {
     Unconstrained,
     Partially_Constrained,
@@ -1442,6 +1447,7 @@ impl Iir_Constraint {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum DelayMechanism {
     Inertial_Delay,
     Transport_Delay,
@@ -1459,6 +1465,7 @@ impl DelayMechanism {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PureState {
     Unknown,
     Pure,
@@ -1482,6 +1489,7 @@ impl PureState {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum AllSensitized {
     Unknown,
     No_Signal,
@@ -1505,6 +1513,7 @@ impl AllSensitized {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum SignalKind {
     Register_Kind,
     Bus_Kind,
@@ -1522,6 +1531,7 @@ impl SignalKind {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Constraint {
     Unconstrained,
     Partially_Constrained,
@@ -1542,6 +1552,7 @@ impl Constraint {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum ForceMode {
     Force_In,
     Force_Out,
@@ -1559,6 +1570,7 @@ impl ForceMode {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum DateStateType {
     Extern,
     Disk,
@@ -1582,6 +1594,7 @@ impl DateStateType {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum NumberBaseType {
     Base_None,
     Base_2,
@@ -1608,6 +1621,7 @@ impl NumberBaseType {
     ];
 }
 #[repr(u16)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PredefinedFunctions {
     Error,
     Boolean_And,
@@ -6314,6 +6328,10 @@ impl Node {
         unsafe { get_kind(self) }
     }
 
+    pub fn raw_id(self: Self) -> u32 {
+        self.0
+    }
+
     pub fn location(self: Self) -> Location {
         unsafe { get_location(self) }
     }
@@ -9474,5 +9492,9 @@ impl Flist {
 
     pub fn set(self: Self, idx: u32, el: Node) {
         unsafe { set_nth_element(self, idx, el); }
+    }
+
+    pub fn get(self: Self, idx: u32) -> Node {
+        unsafe { get_nth_element(self, idx) }
     }
 }

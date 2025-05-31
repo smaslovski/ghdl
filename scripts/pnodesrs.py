@@ -12,7 +12,7 @@ except:
     import pnodes
 
 
-def print_enum(name, vals):
+def print_enum(name, vals, extra_derives=[]):
     if len(vals) < 256:
         repr = 8
     elif len(vals) < 65536:
@@ -20,6 +20,10 @@ def print_enum(name, vals):
     else:
         repr = 32
     print(f"#[repr(u{repr})]")
+    derives = ["Copy", "Clone", "PartialEq"]
+    derives.extend(extra_derives)
+    derives_str = ", ".join(derives)
+    print(f"#[derive({derives_str})]")
     print(f"pub enum {name} {{")
     for k in vals:
         print(f"    {k},")
@@ -38,22 +42,10 @@ def print_enum(name, vals):
     print(f"    ];");
     print(f"}}")
 
-def print_file_header(includeIntEnumUnique=True, includeBindToLibGHDL=True):
-    print(dedent("""\
-            # Auto generated Python source file from Ada sources
-            # Call 'make' in 'src/vhdl' to regenerate:
-            #
-        """) + "{sysImports}from pyTooling.Decorators import export\n{moduleImports}".format(
-            sysImports = "from enum import IntEnum, unique\n" if includeIntEnumUnique else "",
-            moduleImports = "\nfrom pyGHDL.libghdl._decorator import BindToLibGHDL\n" if includeBindToLibGHDL else "",
-        )
-    )
-
-
 def do_class_kinds():
     typ = "Kind"
-    print(f"#[derive(Copy, Clone, PartialEq, PartialOrd)]")
-    print_enum(typ, pnodes.kinds)
+    # print(f"#[derive(Copy, Clone, PartialEq, PartialOrd)]")
+    print_enum(typ, pnodes.kinds, ["PartialOrd"])
     print(f"impl {typ} {{")
     for k, v in pnodes.kinds_ranges.items():
         print(f"    fn is_{k.lower()}(self: Self) -> bool {{")
@@ -92,24 +84,28 @@ def common_subprg_import(pnodes, pfx, nname, convert):
 
 def common_subprg_impl_header():
     print()
-    print(f'impl Node {{')
-    print(f'    pub const NULL: Self = Node(0);')
+    print('impl Node {')
+    print('    pub const NULL: Self = Node(0);')
     print()
-    print(f'    pub fn new(k: Kind) -> Self {{')
-    print(f'        unsafe {{ create(k) }}')
-    print(f'    }}')
+    print('    pub fn new(k: Kind) -> Self {')
+    print('        unsafe { create(k) }')
+    print('    }')
     print()
-    print(f'    pub fn kind(self: Self) -> Kind {{')
-    print(f'        unsafe {{ get_kind(self) }}')
-    print(f'    }}')
+    print('    pub fn kind(self: Self) -> Kind {')
+    print('        unsafe { get_kind(self) }')
+    print('    }')
     print()
-    print(f'    pub fn location(self: Self) -> Location {{')
-    print(f'        unsafe {{ get_location(self) }}')
-    print(f'    }}')
+    print('    pub fn raw_id(self: Self) -> u32 {')
+    print('        self.0')
+    print('    }')
     print()
-    print(f'    pub fn set_location(self: Self, loc: Location) {{')
-    print(f'        unsafe {{ set_location(self, loc) }}')
-    print(f'    }}')
+    print('    pub fn location(self: Self) -> Location {')
+    print('        unsafe { get_location(self) }')
+    print('    }')
+    print()
+    print('    pub fn set_location(self: Self, loc: Location) {')
+    print('        unsafe { set_location(self, loc) }')
+    print('    }')
     print()
 
 def common_subprg_impl(pnodes, convert):
@@ -205,6 +201,10 @@ def do_vhdl_subprg():
     print('    pub fn set(self: Self, idx: u32, el: Node) {')
     print('        unsafe { set_nth_element(self, idx, el); }')
     print('    }')
+    print()
+    print('    pub fn get(self: Self, idx: u32) -> Node {')
+    print('        unsafe { get_nth_element(self, idx) }')
+    print('    }')
     print('}')
 
 
@@ -244,6 +244,7 @@ def do_vhdl_nodes():
     print("use crate::types::*;")
     print("use crate::files_map::{Location, SourceFileEntry};")
     print("use crate::NameId;")
+    print("use crate::str_table::String8Id;")
     print()
     do_class_kinds()
     read_spec_enum("Iir_Mode", "Iir_", "Mode")
@@ -289,10 +290,10 @@ def do_verilog_nodes():
     """Convert verilog-nodes.ads"""
     print("#![allow(non_camel_case_types, dead_code)]")
     print()
-    print("use crate::types::*;")
     print("use crate::verilog::types::*;")
     print("use crate::files_map::Location;")
     print("use crate::NameId;")
+    print("use crate::str_table::String8Id;")
     print()
     print("#[repr(transparent)]")
     print("#[derive(Copy, Clone, PartialEq)]")
@@ -321,10 +322,14 @@ def do_std_names():
     print('#![allow(dead_code)]')
     print('use crate::NameId;')
     for n, v in res:
-#        # Avoid clash with Python names
-#        if n in ["False", "True", "None"]:
-#            n = "N" + n
         print(f"pub const {n.upper()}: NameId = NameId({v});")
+
+
+def do_verilog_standard():
+    res = pnodes.read_any_names("verilog-standard.ads", "", "Node")
+    print('#![allow(dead_code)]')
+    for n, v in res:
+        print(f"pub const {n.upper()}: u32 = {v};")
 
 
 def do_errorout():
@@ -358,6 +363,7 @@ pnodes.actions.update(
         "errorout": do_errorout,
         "verilog-nodes": do_verilog_nodes,
         "std_names": do_std_names,
+        "verilog-standard": do_verilog_standard,
         "class-kinds": do_class_kinds,
     }
 )

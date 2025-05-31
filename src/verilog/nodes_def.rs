@@ -1,16 +1,16 @@
 #![allow(non_camel_case_types, dead_code)]
 
-use crate::types::*;
 use crate::verilog::types::*;
 use crate::files_map::Location;
 use crate::NameId;
+use crate::str_table::String8Id;
 
 #[repr(transparent)]
 #[derive(Copy, Clone, PartialEq)]
 pub struct Node(u32);
 
-#[derive(Copy, Clone, PartialEq, PartialOrd)]
 #[repr(u16)]
+#[derive(Copy, Clone, PartialEq, PartialOrd)]
 pub enum Kind {
     Error,
     Error_Expr,
@@ -1219,6 +1219,7 @@ impl Kind {
 
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Violation {
     None,
     Unique,
@@ -1242,6 +1243,7 @@ impl Violation {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Visibility {
     None,
     Public,
@@ -1265,6 +1267,7 @@ impl Visibility {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum DPISpec {
     Unknown,
     DPI_C,
@@ -1285,6 +1288,7 @@ impl DPISpec {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Edge {
     None,
     Posedge,
@@ -1308,6 +1312,7 @@ impl Edge {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Base {
     Binary,
     Octal,
@@ -1331,6 +1336,7 @@ impl Base {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Lifetime {
     Static,
     Automatic,
@@ -1348,6 +1354,7 @@ impl Lifetime {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Join {
     All,
     Any,
@@ -1368,6 +1375,7 @@ impl Join {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum UdpSymbol {
     Udp_0,
     Udp_1,
@@ -1412,6 +1420,7 @@ impl UdpSymbol {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Polarity {
     Unknown,
     Positive,
@@ -1432,6 +1441,7 @@ impl Polarity {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum UdpKind {
     Combinational,
     Level_Sensitive,
@@ -1452,6 +1462,7 @@ impl UdpKind {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum ConvOps {
     None,
     Lv_Zext,
@@ -1586,6 +1597,7 @@ impl ConvOps {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum BinaryOps {
     Unknown,
     Logic_And,
@@ -1702,6 +1714,7 @@ impl BinaryOps {
     ];
 }
 #[repr(u8)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum UnaryOps {
     Plus,
     Minus,
@@ -3427,6 +3440,10 @@ impl Node {
 
     pub fn kind(self: Self) -> Kind {
         unsafe { get_kind(self) }
+    }
+
+    pub fn raw_id(self: Self) -> u32 {
+        self.0
     }
 
     pub fn location(self: Self) -> Location {

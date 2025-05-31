@@ -157,7 +157,9 @@ package body Trans.Chap4 is
                --  Not a full constant declaration (ie a value for an
                --   already declared constant).
                --  Must create the declaration.
-               if Chap7.Is_Static_Constant (El) then
+               if Get_Type_Staticness (Def) = Locally
+                 and then Chap7.Is_Static_Constant (El)
+               then
                   Info.Object_Static := True;
                   Info.Object_Var := Create_Global_Const
                     (Create_Identifier (El), Obj_Type, Global_Storage,
@@ -2046,7 +2048,13 @@ package body Trans.Chap4 is
             when Iir_Kind_Interface_Type_Declaration =>
                Translate_Interface_Type_Association (Inter, Assoc);
             when Iir_Kinds_Interface_Subprogram_Declaration =>
-               null;
+               --  Copy info so that the subprogram interface can be called
+               --  from outside.
+               declare
+                  Orig : constant Iir := Get_Associated_Subprogram (Inter);
+               begin
+                  Set_Info (Inter, Get_Info (Orig));
+               end;
             when others =>
                Error_Kind ("translate_generic_association_chain", Inter);
          end case;

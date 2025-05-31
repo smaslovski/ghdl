@@ -904,27 +904,34 @@ def read_enum(filename, type_name, prefix, g=lambda m: m.group(1)):
             )
     return toks
 
-def read_std_names():
-    pat_name_first = re.compile(r"   Name_(\w+)\s+: constant Name_Id := (\d+);")
-    pat_name_def = re.compile(r"   Name_(\w+)\s+:\s+constant Name_Id :=\s+Name_(\w+)( \+ (\d+))?;")
+
+def read_any_names(filename, prefix, type):
+    pat_name_first = re.compile(
+        r"   {pfx}(\w+)\s+: constant {type} := (\d+);".format(
+            pfx=prefix, type=type))
+    pat_name_def = re.compile(
+        r"   {pfx}(\w+)\s+:\s+constant {type} :=\s+{pfx}(\w+)( \+ (\d+))?;".format(
+            pfx=prefix, type=type))
     dict = {}
-    lr = linereader("../std_names.ads")
+    res = []
+    lr = linereader(filename)
+    val_max = 1
     while True:
         line = lr.get()
+        if line.startswith("end"):
+            break
+        if line.endswith(":=\n"):
+            line = line.rstrip() + lr.get()
+
         m = pat_name_first.match(line)
         if m:
             name_def = m.group(1)
             val = int(m.group(2))
             dict[name_def] = val
-            res = [(name_def, val)]
-            break
-    val_max = 1
-    while True:
-        line = lr.get()
-        if line == "end Std_Names;\n":
-            break
-        if line.endswith(":=\n"):
-            line = line.rstrip() + lr.get()
+            res.append((name_def, val))
+            val_max = max(val_max, val)
+            continue
+
         m = pat_name_def.match(line)
         if m:
             name_def = m.group(1)
@@ -940,6 +947,10 @@ def read_std_names():
             dict[name_def] = val
             res.append((name_def, val))
     return res
+
+
+def read_std_names():
+    return read_any_names("../std_names.ads", "Name_", "Name_Id")
 
 
 actions = {
@@ -1048,12 +1059,12 @@ def main():
 
     except ParseError as e:
         print(e, file=sys.stderr)
-        print("in {0}:{1}:{2}".format(e.lr.filename, e.lr.lineno, e.lr.l), file=sys.stderr)
+        print(f"in {e.lr.filename}:{e.lr.lineno}:{e.lr.l}", file=sys.stderr)
         sys.exit(1)
 
     f = actions.get(args.action, None)
     if not f:
-        print("Action {0} is unknown".format(args.action), file=sys.stderr)
+        print(f"Action {args.action} is unknown", file=sys.stderr)
         sys.exit(1)
     f()
 
