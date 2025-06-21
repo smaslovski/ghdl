@@ -1,3 +1,8 @@
+## [2025-06-17] 5.1
+
+- Improve release management
+- Add llvm-jit build
+
 ## [2025-03-01] 5.0
 
 - Fix some crashes on errors on Windows x64 with mcode backend
