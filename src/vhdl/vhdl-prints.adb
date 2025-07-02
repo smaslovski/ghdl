@@ -1711,12 +1711,20 @@ package body Vhdl.Prints is
       if Get_Kind (Subprg) in Iir_Kinds_Subprogram_Declaration then
          Inter := Get_Generic_Chain (Subprg);
          if Inter /= Null_Iir then
+            --  Put 'generic' on a new line.
+            Close_Hbox (Ctxt);
+            Start_Hbox (Ctxt);
             Disp_Token (Ctxt, Tok_Generic);
             Disp_Interface_Chain (Ctxt, Inter, True);
+            Close_Hbox (Ctxt);
+            Start_Hbox (Ctxt);
          end if;
       end if;
 
       if Get_Has_Parameter (Subprg) then
+         --  Put 'parameter' on a new line.
+         Close_Hbox (Ctxt);
+         Start_Hbox (Ctxt);
          Disp_Token (Ctxt, Tok_Parameter);
       end if;
 
@@ -2685,6 +2693,8 @@ package body Vhdl.Prints is
                Disp_Token (Ctxt, Tok_Is);
                Close_Hbox (Ctxt);
                Disp_Subprogram_Body (Ctxt, Decl);
+            when Iir_Kind_Subprogram_Instantiation_Body =>
+               null;
             when Iir_Kinds_Subprogram_Instantiation_Declaration =>
                Disp_Subprogram_Instantiation_Declaration (Ctxt, Decl);
             when Iir_Kind_Protected_Type_Body =>

@@ -353,6 +353,7 @@ package body Vhdl.Utils is
                | Iir_Kinds_Specification
                | Iir_Kind_Non_Object_Alias_Declaration
                | Iir_Kinds_Subprogram_Body
+               | Iir_Kind_Subprogram_Instantiation_Body
                | Iir_Kind_Protected_Type_Body
                | Iir_Kind_Generate_Statement_Body
                | Iir_Kind_Package_Instantiation_Body
@@ -1572,13 +1573,15 @@ package body Vhdl.Utils is
    function Is_Function_Declaration (N : Iir) return Boolean is
    begin
       return Kind_In (N, Iir_Kind_Function_Declaration,
-                      Iir_Kind_Interface_Function_Declaration);
+                      Iir_Kind_Interface_Function_Declaration,
+                      Iir_Kind_Function_Instantiation_Declaration);
    end Is_Function_Declaration;
 
    function Is_Procedure_Declaration (N : Iir) return Boolean is
    begin
       return Kind_In (N, Iir_Kind_Procedure_Declaration,
-                      Iir_Kind_Interface_Procedure_Declaration);
+                      Iir_Kind_Interface_Procedure_Declaration,
+                      Iir_Kind_Procedure_Instantiation_Declaration);
    end Is_Procedure_Declaration;
 
    function Is_Same_Profile (L, R: Iir) return Boolean

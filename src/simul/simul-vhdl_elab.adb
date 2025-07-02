@@ -464,8 +464,10 @@ package body Simul.Vhdl_Elab is
            | Iir_Kind_Subtype_Declaration
            | Iir_Kind_Function_Declaration
            | Iir_Kind_Procedure_Declaration
+           | Iir_Kinds_Subprogram_Instantiation_Declaration
            | Iir_Kind_Function_Body
            | Iir_Kind_Procedure_Body
+           | Iir_Kind_Subprogram_Instantiation_Body
            | Iir_Kind_Component_Declaration
            | Iir_Kind_File_Declaration
            | Iir_Kind_Protected_Type_Body

@@ -1645,11 +1645,11 @@ package Vhdl.Nodes is
    --
    --   Get/Set_Subprogram_Hash (Field4)
    --
-   --   Get/Set_Interface_Declaration_Chain (Field5)
-   --
    --   Get/Set_Generic_Chain (Field6)
    --
    --  --Get/Set_Generic_Map_Aspect_Chain (Field8)
+   --
+   --   Get/Set_Interface_Declaration_Chain (Field5)
    --
    --   Get/Set_Implicit_Definition (Field7)
    --
@@ -1667,11 +1667,7 @@ package Vhdl.Nodes is
    --
    --   Get/Set_Seen_Flag (Flag1)
    --
-   -- Only for Iir_Kind_Function_Declaration:
-   --   Get/Set_Pure_Flag (Flag2)
-   --
-   -- Only for Iir_Kind_Procedure_Declaration:
-   --   Get/Set_Passive_Flag (Flag2)
+   --   Get/Set_Macro_Expand_Flag (Flag2)
    --
    --   Get/Set_Foreign_Flag (Flag3)
    --
@@ -1703,6 +1699,12 @@ package Vhdl.Nodes is
    --  an implicit operation of a type.
    --   Get/Set_Hide_Implicit_Flag (Flag12)
    --
+   -- Only for Iir_Kind_Function_Declaration:
+   --   Get/Set_Pure_Flag (Flag14)
+   --
+   -- Only for Iir_Kind_Procedure_Declaration:
+   --   Get/Set_Passive_Flag (Flag14)
+   --
    --   Get/Set_Wait_State (State1)
    --
    -- Only for Iir_Kind_Procedure_Declaration:
@@ -1712,6 +1714,7 @@ package Vhdl.Nodes is
 
    -- Iir_Kind_Function_Body (Medium)
    -- Iir_Kind_Procedure_Body (Medium)
+   -- Iir_Kind_Subprogram_Instantiation_Body (Medium)
    --
    --  LRM08 4.3 Subprogram bodies
    --
@@ -1748,6 +1751,7 @@ package Vhdl.Nodes is
    --   Get/Set_End_Has_Identifier (Flag9)
    --
    -- Only for Iir_Kind_Procedure_Body:
+   -- Only for Iir_Kind_Subprogram_Instantiation_Body:
    --   Get/Set_Suspend_Flag (Flag11)
 
    -- Iir_Kind_Function_Instantiation_Declaration (Medium)
@@ -1755,21 +1759,21 @@ package Vhdl.Nodes is
    --
    --   Get/Set_Parent (Field0)
    --
-   -- Only for Iir_Kind_Function_Instantiation_Declaration:
-   --   Get/Set_Return_Type (Field1)
-   --
-   -- Only for Iir_Kind_Function_Instantiation_Declaration:
-   --   Get/Set_Type (Alias Field1)
-   --
    --   Get/Set_Chain (Field2)
    --
    --   Get/Set_Identifier (Field3)
    --
    --   Get/Set_Subprogram_Hash (Field4)
    --
+   --   Get/Set_Generic_Chain (Field6)
+   --
    --   Get/Set_Interface_Declaration_Chain (Field5)
    --
-   --   Get/Set_Generic_Chain (Field6)
+   -- Only for Iir_Kind_Function_Instantiation_Declaration:
+   --   Get/Set_Return_Type (Field1)
+   --
+   -- Only for Iir_Kind_Function_Instantiation_Declaration:
+   --   Get/Set_Type (Alias Field1)
    --
    --  A signature or a simple name.
    --   Get/Set_Uninstantiated_Subprogram_Name (Field7)
@@ -1778,7 +1782,20 @@ package Vhdl.Nodes is
    --
    --   Get/Set_Instance_Source_File (Field10)
    --
+   --   Get/Set_Instance_Subprogram_Body (Field11)
+   --
+   --   Get/Set_Overload_Number (Field12)
+   --
+   --   Get/Set_Foreign_Flag (Flag3)
+   --
    --   Get/Set_Visible_Flag (Flag4)
+   --
+   --   Get/Set_Use_Flag (Flag6)
+   --
+   --   Get/Set_Wait_State (State1)
+   --
+   -- Only for Iir_Kind_Procedure_Instantiation_Declaration:
+   --   Get/Set_Suspend_Flag (Flag11)
 
    -- Iir_Kind_Interface_Function_Declaration (Medium)
    -- Iir_Kind_Interface_Procedure_Declaration (Medium)
@@ -1829,7 +1846,7 @@ package Vhdl.Nodes is
    --   Get/Set_Seen_Flag (Flag1)
    --
    -- Only for Iir_Kind_Interface_Function_Declaration:
-   --   Get/Set_Pure_Flag (Flag2)
+   --   Get/Set_Pure_Flag (Flag14)
    --
    --   Get/Set_Foreign_Flag (Flag3)
    --
@@ -3479,8 +3496,6 @@ package Vhdl.Nodes is
    --
    --   Get/Set_Seen_Flag (Flag1)
    --
-   --   Get/Set_Passive_Flag (Flag2)
-   --
    --   Get/Set_Postponed_Flag (Flag3)
    --
    --   Get/Set_Visible_Flag (Flag4)
@@ -3500,10 +3515,12 @@ package Vhdl.Nodes is
    --
    --  Set when std.env.stop/finish is called.  Prevents the infinite loop
    --  warning.
-   --   Get/Set_Stop_Flag (Flag13)
+   --   Get/Set_Stop_Flag (Flag2)
    --
    -- Only for Iir_Kind_Sensitized_Process_Statement:
    --   Get/Set_Is_Ref (Flag12)
+   --
+   --   Get/Set_Passive_Flag (Flag14)
 
    -- Iir_Kind_Concurrent_Assertion_Statement (Short)
    --
@@ -5273,6 +5290,7 @@ package Vhdl.Nodes is
       Iir_Kind_Procedure_Declaration,           --  Subprg, Proc
       Iir_Kind_Function_Body,
       Iir_Kind_Procedure_Body,
+      Iir_Kind_Subprogram_Instantiation_Body,
       Iir_Kind_Function_Instantiation_Declaration,
       Iir_Kind_Procedure_Instantiation_Declaration,
 
@@ -8376,6 +8394,11 @@ package Vhdl.Nodes is
    function Get_Owned_Instance_Package_Body (Pkg : Iir) return Iir;
    procedure Set_Owned_Instance_Package_Body (Pkg : Iir; Decl : Iir);
 
+   --  The subprogram body corresponding to the subprogram declaration.
+   --  Field: Field11 Forward_Ref
+   function Get_Instance_Subprogram_Body (Pkg : Iir) return Iir;
+   procedure Set_Instance_Subprogram_Body (Pkg : Iir; Decl : Iir);
+
    --  Field: Flag1
    function Get_Need_Body (Decl : Iir_Package_Declaration) return Boolean;
    procedure Set_Need_Body (Decl : Iir_Package_Declaration; Flag : Boolean);
@@ -9066,7 +9089,7 @@ package Vhdl.Nodes is
    --   TRUE if the process must be passive.
    --   FALSE if the process may be not passive.
    --  For a procedure declaration, set if it is passive.
-   --  Field: Flag2
+   --  Field: Flag14
    function Get_Passive_Flag (Proc : Iir) return Boolean;
    procedure Set_Passive_Flag (Proc : Iir; Flag : Boolean);
 
@@ -9106,7 +9129,7 @@ package Vhdl.Nodes is
    --  Get/Set the pure flag of a function.
    --  TRUE if the function is declared pure.
    --  FALSE if the function is declared impure.
-   --  Field: Flag2
+   --  Field: Flag14
    function Get_Pure_Flag (Func : Iir) return Boolean;
    procedure Set_Pure_Flag (Func : Iir; Flag : Boolean);
 
@@ -9833,7 +9856,7 @@ package Vhdl.Nodes is
    function Get_Covered_Flag (Stmt : Iir) return Boolean;
    procedure Set_Covered_Flag (Stmt : Iir; Flag : Boolean);
 
-   --  Field: Flag13
+   --  Field: Flag2
    function Get_Stop_Flag (Stmt : Iir) return Boolean;
    procedure Set_Stop_Flag (Stmt : Iir; Flag : Boolean);
 
