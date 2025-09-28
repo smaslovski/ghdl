@@ -426,7 +426,7 @@ package body Synth.Vhdl_Eval is
       return Create_Memory_U8 (Boolean'Pos (V), Boolean_Type);
    end Create_Memory_Boolean;
 
-   function Eval_Vector_Monadic (Vec : Memtyp; Op : Table_1d) return Memtyp
+   function Eval_Std_Not (Vec : Memtyp) return Memtyp
    is
       Len : constant Iir_Index32 := Vec_Length (Vec.Typ);
       Res : Memtyp;
@@ -436,11 +436,11 @@ package body Synth.Vhdl_Eval is
          declare
             V : constant Std_Ulogic := Read_Std_Logic (Vec.Mem, I - 1);
          begin
-            Write_Std_Logic (Res.Mem, I - 1, Op (V));
+            Write_Std_Logic (Res.Mem, I - 1, Not_Table (V));
          end;
       end loop;
       return Res;
-   end Eval_Vector_Monadic;
+   end Eval_Std_Not;
 
    function Eval_Vector_Reduce (Init : Std_Ulogic;
                                 Vec : Memtyp;
@@ -731,14 +731,15 @@ package body Synth.Vhdl_Eval is
       return Res;
    end Eval_To_Bit_Vector;
 
-   function Eval_Unsigned_To_Integer (Arg : Memtyp; Loc : Node) return Int64
+   function Eval_Std_Unsigned_To_Integer (Arg : Memtyp; Loc : Node)
+                                         return Int64
    is
       Res : Uns64;
       V : Std_Ulogic;
    begin
       Res := 0;
       for I in 1 .. Vec_Length (Arg.Typ) loop
-         V := Std_Ulogic'Val (Read_U8 (Arg.Mem + Size_Type (I - 1)));
+         V := Read_Std_Logic (Arg.Mem, Uns32 (I - 1));
          case To_X01 (V) is
             when '0' =>
                Res := Res * 2;
@@ -751,9 +752,20 @@ package body Synth.Vhdl_Eval is
          end case;
       end loop;
       return To_Int64 (Res);
-   end Eval_Unsigned_To_Integer;
+   end Eval_Std_Unsigned_To_Integer;
 
-   function Eval_Signed_To_Integer (Arg : Memtyp; Loc : Node) return Int64
+   function Eval_Bit_Unsigned_To_Integer (Arg : Memtyp) return Int64
+   is
+      Res : Uns64;
+   begin
+      Res := 0;
+      for I in 1 .. Vec_Length (Arg.Typ) loop
+         Res := Res * 2 + Bit'Pos (Read_Bit (Arg.Mem, Uns32 (I - 1)));
+      end loop;
+      return To_Int64 (Res);
+   end Eval_Bit_Unsigned_To_Integer;
+
+   function Eval_Std_Signed_To_Integer (Arg : Memtyp; Loc : Node) return Int64
    is
       Len : constant Iir_Index32 := Vec_Length (Arg.Typ);
       Res : Uns64;
@@ -765,7 +777,7 @@ package body Synth.Vhdl_Eval is
          return 0;
       end if;
 
-      E := Std_Ulogic'Val (Read_U8 (Arg.Mem));
+      E := Read_Std_Logic (Arg.Mem, 0);
       case To_X01 (E) is
          when '0' =>
             Res := 0;
@@ -776,7 +788,7 @@ package body Synth.Vhdl_Eval is
             return 0;
       end case;
       for I in 2 .. Len loop
-         E := Std_Ulogic'Val (Read_U8 (Arg.Mem + Size_Type (I - 1)));
+         E := Read_Std_Logic (Arg.Mem, Uns32 (I - 1));
          case To_X01 (E) is
             when '0' =>
                Res := Res * 2;
@@ -788,7 +800,32 @@ package body Synth.Vhdl_Eval is
          end case;
       end loop;
       return To_Int64 (Res);
-   end Eval_Signed_To_Integer;
+   end Eval_Std_Signed_To_Integer;
+
+   function Eval_Bit_Signed_To_Integer (Arg : Memtyp; Loc : Node) return Int64
+   is
+      Len : constant Iir_Index32 := Vec_Length (Arg.Typ);
+      Res : Uns64;
+      E : Bit;
+   begin
+      if Len = 0 then
+         Warning_Msg_Synth
+           (+Loc, "numeric_bit.to_integer: null detected, returning 0");
+         return 0;
+      end if;
+
+      E := Read_Bit (Arg.Mem, 0);
+      case E is
+         when '0' =>
+            Res := 0;
+         when '1' =>
+            Res := not 0;
+      end case;
+      for I in 2 .. Len loop
+         Res := Res * 2 + Bit'Pos (Read_Bit (Arg.Mem, Uns32 (I - 1)));
+      end loop;
+      return To_Int64 (Res);
+   end Eval_Bit_Signed_To_Integer;
 
    function Eval_Log_To_Integer (Arg : Memtyp; Loc : Node) return Int64
    is
@@ -1032,6 +1069,7 @@ package body Synth.Vhdl_Eval is
       Imp  : constant Node := Get_Implementation (Expr);
       Def : constant Iir_Predefined_Functions :=
         Get_Implicit_Definition (Imp);
+      Ord : Order_Type;
    begin
       case Def is
          when Iir_Predefined_Error =>
@@ -1142,7 +1180,11 @@ package body Synth.Vhdl_Eval is
          when Iir_Predefined_Ieee_1164_Vector_Not
            | Iir_Predefined_Ieee_Numeric_Std_Not_Uns
            | Iir_Predefined_Ieee_Numeric_Std_Not_Sgn =>
-            return Eval_Vector_Monadic (Param1, Not_Table);
+            return Eval_Std_Not (Param1);
+
+         when Iir_Predefined_Ieee_Numeric_Bit_Not_Uns
+            | Iir_Predefined_Ieee_Numeric_Bit_Not_Sgn =>
+            return Num_Bit.Not_Vec (Param1);
 
          when Iir_Predefined_Ieee_1164_Scalar_Not =>
             return Create_Memory_U8
@@ -1794,518 +1836,338 @@ package body Synth.Vhdl_Eval is
          when Iir_Predefined_Ieee_Numeric_Std_Eq_Uns_Uns
             | Iir_Predefined_Ieee_Std_Logic_Arith_Eq_Uns_Uns
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Eq_Slv_Slv =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Uns_Uns
-                 (Param1, Param2, Greater, +Expr) = Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Uns_Uns (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord = Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Eq_Uns_Uns =>
+            Ord := Num_Bit.Compare_Uns_Uns (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord = Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Eq_Uns_Nat =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Uns_Nat
-                 (Param1, Param2, Greater, +Expr) = Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Uns_Nat (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord = Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Eq_Nat_Uns =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Uns_Nat
-                 (Param2, Param1, Greater, +Expr) = Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Uns_Nat (Param2, Param1, Greater, +Expr);
+            return Create_Memory_Boolean (Ord = Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Eq_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Eq_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Eq_Slv_Slv =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Sgn_Sgn
-                 (Param1, Param2, Greater, +Expr) = Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Sgn_Sgn (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord = Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Eq_Sgn_Sgn =>
+            Ord := Num_Bit.Compare_Sgn_Sgn (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord = Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Eq_Sgn_Int
             | Iir_Predefined_Ieee_Std_Logic_Arith_Eq_Sgn_Int
             | Iir_Predefined_Ieee_Std_Logic_Signed_Eq_Slv_Int =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Sgn_Int
-                 (Param1, Param2, Greater, +Expr) = Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Sgn_Int (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord = Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Eq_Sgn_Int =>
+            Ord := Num_Bit.Compare_Sgn_Int (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord = Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Eq_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Eq_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Eq_Int_Slv =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Sgn_Int
-                 (Param2, Param1, Greater, +Expr) = Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Sgn_Int (Param2, Param1, Greater, +Expr);
+            return Create_Memory_Boolean (Ord = Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Eq_Int_Sgn =>
+            Ord := Num_Bit.Compare_Sgn_Int (Param2, Param1, Greater, +Expr);
+            return Create_Memory_Boolean (Ord = Equal);
 
          when Iir_Predefined_Ieee_Numeric_Std_Ne_Uns_Uns
             | Iir_Predefined_Ieee_Std_Logic_Arith_Ne_Uns_Uns
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Ne_Slv_Slv =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Num_Std.Compare_Uns_Uns (Param1, Param2, Greater, +Expr);
-               return Create_Memory_Boolean (Res /= Equal);
-            end;
+            Ord := Num_Std.Compare_Uns_Uns (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord /= Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Ne_Uns_Nat =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Num_Std.Compare_Uns_Nat (Param1, Param2, Greater, +Expr);
-               return Create_Memory_Boolean (Res /= Equal);
-            end;
+            Ord := Num_Std.Compare_Uns_Nat (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord /= Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Ne_Nat_Uns =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Num_Std.Compare_Uns_Nat (Param2, Param1, Greater, +Expr);
-               return Create_Memory_Boolean (Res /= Equal);
-            end;
+            Ord := Num_Std.Compare_Uns_Nat (Param2, Param1, Greater, +Expr);
+            return Create_Memory_Boolean (Ord /= Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Ne_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Ne_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Ne_Slv_Slv =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Num_Std.Compare_Sgn_Sgn (Param1, Param2, Greater, +Expr);
-               return Create_Memory_Boolean (Res /= Equal);
-            end;
+            Ord := Num_Std.Compare_Sgn_Sgn (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord /= Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Ne_Sgn_Int
             | Iir_Predefined_Ieee_Std_Logic_Arith_Ne_Sgn_Int
             | Iir_Predefined_Ieee_Std_Logic_Signed_Ne_Slv_Int =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Num_Std.Compare_Sgn_Int (Param1, Param2, Greater, +Expr);
-               return Create_Memory_Boolean (Res /= Equal);
-            end;
+            Ord := Num_Std.Compare_Sgn_Int (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord /= Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Ne_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Ne_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Ne_Int_Slv =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Num_Std.Compare_Sgn_Int (Param2, Param1, Greater, +Expr);
-               return Create_Memory_Boolean (Res /= Equal);
-            end;
+            Ord := Num_Std.Compare_Sgn_Int (Param2, Param1, Greater, +Expr);
+            return Create_Memory_Boolean (Ord /= Equal);
 
          when Iir_Predefined_Ieee_Numeric_Std_Gt_Uns_Uns
             | Iir_Predefined_Ieee_Std_Logic_Arith_Gt_Uns_Uns
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Gt_Slv_Slv =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Uns_Uns
-                 (Param1, Param2, Less, +Expr) = Greater;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Uns_Uns (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord = Greater);
+         when Iir_Predefined_Ieee_Numeric_Bit_Gt_Uns_Uns =>
+            Ord := Num_Bit.Compare_Uns_Uns (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord = Greater);
          when Iir_Predefined_Ieee_Numeric_Std_Gt_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Gt_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Gt_Slv_Slv =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Sgn_Sgn
-                 (Param1, Param2, Less, +Expr) = Greater;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Sgn_Sgn (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord = Greater);
+         when Iir_Predefined_Ieee_Numeric_Bit_Gt_Sgn_Sgn =>
+            Ord := Num_Bit.Compare_Sgn_Sgn (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord = Greater);
          when Iir_Predefined_Ieee_Numeric_Std_Gt_Nat_Uns =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Nat_Uns
-                 (Param1, Param2, Less, +Expr) = Greater;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Nat_Uns (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord = Greater);
+         when Iir_Predefined_Ieee_Numeric_Bit_Gt_Nat_Uns =>
+            Ord := Num_Bit.Compare_Nat_Uns (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord = Greater);
          when Iir_Predefined_Ieee_Numeric_Std_Gt_Uns_Nat =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Uns_Nat
-                 (Param1, Param2, Less, +Expr) = Greater;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Uns_Nat (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord = Greater);
+         when Iir_Predefined_Ieee_Numeric_Bit_Gt_Uns_Nat =>
+            Ord := Num_Bit.Compare_Uns_Nat (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord = Greater);
          when Iir_Predefined_Ieee_Numeric_Std_Gt_Sgn_Int
             | Iir_Predefined_Ieee_Std_Logic_Arith_Gt_Sgn_Int
             | Iir_Predefined_Ieee_Std_Logic_Signed_Gt_Slv_Int =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Sgn_Int
-                 (Param1, Param2, Less, +Expr) = Greater;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Sgn_Int (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord = Greater);
+         when Iir_Predefined_Ieee_Numeric_Bit_Gt_Sgn_Int =>
+            Ord := Num_Bit.Compare_Sgn_Int (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord = Greater);
          when Iir_Predefined_Ieee_Numeric_Std_Gt_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Gt_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Gt_Int_Slv =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Sgn_Int
-                 (Param2, Param1, Greater, +Expr) < Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Sgn_Int (Param2, Param1, Greater, +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Gt_Int_Sgn =>
+            Ord := Num_Bit.Compare_Sgn_Int (Param2, Param1, Greater, +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
 
          when Iir_Predefined_Ieee_Numeric_Std_Ge_Uns_Uns
             | Iir_Predefined_Ieee_Std_Logic_Arith_Ge_Uns_Uns
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Ge_Slv_Slv =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Uns_Uns
-                 (Param1, Param2, Less, +Expr) >= Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Uns_Uns (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Ge_Uns_Uns =>
+            Ord := Num_Bit.Compare_Uns_Uns (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Ge_Nat_Uns =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Nat_Uns
-                 (Param1, Param2, Less, +Expr) >= Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Nat_Uns (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Ge_Nat_Uns =>
+            Ord := Num_Bit.Compare_Nat_Uns (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Ge_Uns_Nat =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Uns_Nat
-                 (Param1, Param2, Less, +Expr) >= Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Uns_Nat (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Ge_Uns_Nat =>
+            Ord := Num_Bit.Compare_Uns_Nat (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Ge_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Ge_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Ge_Slv_Slv =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Sgn_Sgn
-                 (Param1, Param2, Less, +Expr) >= Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Sgn_Sgn (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Ge_Sgn_Sgn =>
+            Ord := Num_Bit.Compare_Sgn_Sgn (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Ge_Sgn_Int
             | Iir_Predefined_Ieee_Std_Logic_Arith_Ge_Sgn_Int
             | Iir_Predefined_Ieee_Std_Logic_Signed_Ge_Slv_Int =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Sgn_Int
-                 (Param1, Param2, Less, +Expr) >= Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Sgn_Int (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Ge_Sgn_Int =>
+            Ord := Num_Bit.Compare_Sgn_Int (Param1, Param2, Less, +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Ge_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Ge_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Ge_Int_Slv =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Num_Std.Compare_Sgn_Int (Param2, Param1, Greater, +Expr);
-               return Create_Memory_Boolean (Res <= Equal);
-            end;
+            Ord := Num_Std.Compare_Sgn_Int (Param2, Param1, Greater, +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Ge_Int_Sgn =>
+            Ord := Num_Bit.Compare_Sgn_Int (Param2, Param1, Greater, +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
 
          when Iir_Predefined_Ieee_Numeric_Std_Le_Uns_Uns
             | Iir_Predefined_Ieee_Std_Logic_Arith_Le_Uns_Uns
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Le_Slv_Slv =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Num_Std.Compare_Uns_Uns (Param1, Param2, Greater, +Expr);
-               return Create_Memory_Boolean (Res <= Equal);
-            end;
+            Ord := Num_Std.Compare_Uns_Uns (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Le_Uns_Uns =>
+            Ord := Num_Bit.Compare_Uns_Uns (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Le_Uns_Nat =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Num_Std.Compare_Uns_Nat (Param1, Param2, Greater, +Expr);
-               return Create_Memory_Boolean (Res <= Equal);
-            end;
+            Ord := Num_Std.Compare_Uns_Nat (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Le_Uns_Nat =>
+            Ord := Num_Bit.Compare_Uns_Nat (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Le_Nat_Uns =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Num_Std.Compare_Nat_Uns (Param1, Param2, Greater, +Expr);
-               return Create_Memory_Boolean (Res <= Equal);
-            end;
+            Ord := Num_Std.Compare_Nat_Uns (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Le_Nat_Uns =>
+            Ord := Num_Bit.Compare_Nat_Uns (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Le_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Le_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Le_Slv_Slv =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Num_Std.Compare_Sgn_Sgn (Param1, Param2, Greater, +Expr);
-               return Create_Memory_Boolean (Res <= Equal);
-            end;
+            Ord := Num_Std.Compare_Sgn_Sgn (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Le_Sgn_Sgn =>
+            Ord := Num_Bit.Compare_Sgn_Sgn (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Le_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Le_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Le_Int_Slv =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Sgn_Int
-                 (Param2, Param1, Less, +Expr) >= Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Sgn_Int (Param2, Param1, Less, +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Le_Int_Sgn =>
+            Ord := Num_Bit.Compare_Sgn_Int (Param2, Param1, Less, +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Le_Sgn_Int
             | Iir_Predefined_Ieee_Std_Logic_Arith_Le_Sgn_Int
             | Iir_Predefined_Ieee_Std_Logic_Signed_Le_Slv_Int =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Num_Std.Compare_Sgn_Int (Param1, Param2, Greater, +Expr);
-               return Create_Memory_Boolean (Res <= Equal);
-            end;
+            Ord := Num_Std.Compare_Sgn_Int (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Le_Sgn_Int =>
+            Ord := Num_Bit.Compare_Sgn_Int (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
 
          when Iir_Predefined_Ieee_Numeric_Std_Lt_Uns_Uns
             | Iir_Predefined_Ieee_Std_Logic_Arith_Lt_Uns_Uns
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Lt_Slv_Slv =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Uns_Uns
-                 (Param1, Param2, Greater, +Expr) < Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Uns_Uns (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Lt_Uns_Uns =>
+            Ord := Num_Bit.Compare_Uns_Uns (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Lt_Uns_Nat =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Uns_Nat
-                 (Param1, Param2, Greater, +Expr) < Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Uns_Nat (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Lt_Uns_Nat =>
+            Ord := Num_Bit.Compare_Uns_Nat (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Lt_Nat_Uns =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Nat_Uns
-                 (Param1, Param2, Greater, +Expr) < Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Nat_Uns (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Lt_Nat_Uns =>
+            Ord := Num_Bit.Compare_Nat_Uns (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Lt_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Lt_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Lt_Slv_Slv =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Sgn_Sgn
-                 (Param1, Param2, Greater, +Expr) < Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Sgn_Sgn (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Lt_Sgn_Sgn =>
+            Ord := Num_Bit.Compare_Sgn_Sgn (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Lt_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Lt_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Lt_Int_Slv =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Sgn_Int
-                 (Param2, Param1, Less, +Expr) > Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Sgn_Int (Param2, Param1, Less, +Expr);
+            return Create_Memory_Boolean (Ord > Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Lt_Int_Sgn =>
+            Ord := Num_Bit.Compare_Sgn_Int (Param2, Param1, Less, +Expr);
+            return Create_Memory_Boolean (Ord > Equal);
          when Iir_Predefined_Ieee_Numeric_Std_Lt_Sgn_Int
             | Iir_Predefined_Ieee_Std_Logic_Arith_Lt_Sgn_Int
             | Iir_Predefined_Ieee_Std_Logic_Signed_Lt_Slv_Int =>
-            declare
-               Res : Boolean;
-            begin
-               Res := Num_Std.Compare_Sgn_Int
-                 (Param1, Param2, Greater, +Expr) < Equal;
-               return Create_Memory_Boolean (Res);
-            end;
+            Ord := Num_Std.Compare_Sgn_Int (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
+         when Iir_Predefined_Ieee_Numeric_Bit_Lt_Sgn_Int =>
+            Ord := Num_Bit.Compare_Sgn_Int (Param1, Param2, Greater, +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
 
          when Iir_Predefined_Ieee_Std_Logic_Arith_Lt_Uns_Sgn =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Sgn (Param1, Param2, +Expr);
-               return Create_Memory_Boolean (Res < Equal);
-            end;
+            Ord := Compare_Uns_Sgn (Param1, Param2, +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Lt_Sgn_Uns =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Sgn (Param2, Param1, +Expr);
-               return Create_Memory_Boolean (Res > Equal);
-            end;
+            Ord := Compare_Uns_Sgn (Param2, Param1, +Expr);
+            return Create_Memory_Boolean (Ord > Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Lt_Uns_Int
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Lt_Slv_Int =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Int (Param1, Read_Discrete (Param2), +Expr);
-               return Create_Memory_Boolean (Res < Equal);
-            end;
+            Ord := Compare_Uns_Int (Param1, Read_Discrete (Param2), +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Lt_Int_Uns
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Lt_Int_Slv =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Int (Param2, Read_Discrete (Param1), +Expr);
-               return Create_Memory_Boolean (Res > Equal);
-            end;
+            Ord := Compare_Uns_Int (Param2, Read_Discrete (Param1), +Expr);
+            return Create_Memory_Boolean (Ord > Equal);
 
          when Iir_Predefined_Ieee_Std_Logic_Arith_Le_Uns_Sgn =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Sgn (Param1, Param2, +Expr);
-               return Create_Memory_Boolean (Res <= Equal);
-            end;
+            Ord := Compare_Uns_Sgn (Param1, Param2, +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Le_Sgn_Uns =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Sgn (Param2, Param1, +Expr);
-               return Create_Memory_Boolean (Res >= Equal);
-            end;
+            Ord := Compare_Uns_Sgn (Param2, Param1, +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Le_Uns_Int
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Le_Slv_Int =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Int (Param1, Read_Discrete (Param2), +Expr);
-               return Create_Memory_Boolean (Res <= Equal);
-            end;
+            Ord := Compare_Uns_Int (Param1, Read_Discrete (Param2), +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Le_Int_Uns
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Le_Int_Slv =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Int (Param2, Read_Discrete (Param1), +Expr);
-               return Create_Memory_Boolean (Res >= Equal);
-            end;
+            Ord := Compare_Uns_Int (Param2, Read_Discrete (Param1), +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
 
          when Iir_Predefined_Ieee_Std_Logic_Arith_Gt_Uns_Sgn =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Sgn (Param1, Param2, +Expr);
-               return Create_Memory_Boolean (Res > Equal);
-            end;
+            Ord := Compare_Uns_Sgn (Param1, Param2, +Expr);
+            return Create_Memory_Boolean (Ord > Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Gt_Sgn_Uns =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Sgn (Param2, Param1, +Expr);
-               return Create_Memory_Boolean (Res < Equal);
-            end;
+            Ord := Compare_Uns_Sgn (Param2, Param1, +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Gt_Uns_Int
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Gt_Slv_Int =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Int (Param1, Read_Discrete (Param2), +Expr);
-               return Create_Memory_Boolean (Res > Equal);
-            end;
+            Ord := Compare_Uns_Int (Param1, Read_Discrete (Param2), +Expr);
+            return Create_Memory_Boolean (Ord > Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Gt_Int_Uns
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Gt_Int_Slv =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Int (Param2, Read_Discrete (Param1), +Expr);
-               return Create_Memory_Boolean (Res < Equal);
-            end;
+            Ord := Compare_Uns_Int (Param2, Read_Discrete (Param1), +Expr);
+            return Create_Memory_Boolean (Ord < Equal);
 
          when Iir_Predefined_Ieee_Std_Logic_Arith_Ge_Uns_Sgn =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Sgn (Param1, Param2, +Expr);
-               return Create_Memory_Boolean (Res >= Equal);
-            end;
+            Ord := Compare_Uns_Sgn (Param1, Param2, +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Ge_Sgn_Uns =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Sgn (Param2, Param1, +Expr);
-               return Create_Memory_Boolean (Res <= Equal);
-            end;
+            Ord := Compare_Uns_Sgn (Param2, Param1, +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Ge_Uns_Int
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Ge_Slv_Int =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Int (Param1, Read_Discrete (Param2), +Expr);
-               return Create_Memory_Boolean (Res >= Equal);
-            end;
+            Ord := Compare_Uns_Int (Param1, Read_Discrete (Param2), +Expr);
+            return Create_Memory_Boolean (Ord >= Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Ge_Int_Uns
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Ge_Int_Slv =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Int (Param2, Read_Discrete (Param1), +Expr);
-               return Create_Memory_Boolean (Res <= Equal);
-            end;
+            Ord := Compare_Uns_Int (Param2, Read_Discrete (Param1), +Expr);
+            return Create_Memory_Boolean (Ord <= Equal);
 
          when Iir_Predefined_Ieee_Std_Logic_Arith_Eq_Uns_Sgn =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Sgn (Param1, Param2, +Expr);
-               return Create_Memory_Boolean (Res = Equal);
-            end;
+            Ord := Compare_Uns_Sgn (Param1, Param2, +Expr);
+            return Create_Memory_Boolean (Ord = Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Eq_Sgn_Uns =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Sgn (Param2, Param1, +Expr);
-               return Create_Memory_Boolean (Res = Equal);
-            end;
+            Ord := Compare_Uns_Sgn (Param2, Param1, +Expr);
+            return Create_Memory_Boolean (Ord = Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Eq_Uns_Int
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Eq_Slv_Int =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Int (Param1, Read_Discrete (Param2), +Expr);
-               return Create_Memory_Boolean (Res = Equal);
-            end;
+            Ord := Compare_Uns_Int (Param1, Read_Discrete (Param2), +Expr);
+            return Create_Memory_Boolean (Ord = Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Eq_Int_Uns
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Eq_Int_Slv =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Int (Param2, Read_Discrete (Param1), +Expr);
-               return Create_Memory_Boolean (Res = Equal);
-            end;
+            Ord := Compare_Uns_Int (Param2, Read_Discrete (Param1), +Expr);
+            return Create_Memory_Boolean (Ord = Equal);
 
          when Iir_Predefined_Ieee_Std_Logic_Arith_Ne_Uns_Sgn =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Sgn (Param1, Param2, +Expr);
-               return Create_Memory_Boolean (Res /= Equal);
-            end;
+            Ord := Compare_Uns_Sgn (Param1, Param2, +Expr);
+            return Create_Memory_Boolean (Ord /= Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Ne_Sgn_Uns =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Sgn (Param2, Param1, +Expr);
-               return Create_Memory_Boolean (Res /= Equal);
-            end;
+            Ord := Compare_Uns_Sgn (Param2, Param1, +Expr);
+            return Create_Memory_Boolean (Ord /= Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Ne_Uns_Int
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Ne_Slv_Int =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Int (Param1, Read_Discrete (Param2), +Expr);
-               return Create_Memory_Boolean (Res /= Equal);
-            end;
+            Ord := Compare_Uns_Int (Param1, Read_Discrete (Param2), +Expr);
+            return Create_Memory_Boolean (Ord /= Equal);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Ne_Int_Uns
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Ne_Int_Slv =>
-            declare
-               Res : Order_Type;
-            begin
-               Res := Compare_Uns_Int (Param2, Read_Discrete (Param1), +Expr);
-               return Create_Memory_Boolean (Res /= Equal);
-            end;
+            Ord := Compare_Uns_Int (Param2, Read_Discrete (Param1), +Expr);
+            return Create_Memory_Boolean (Ord /= Equal);
 
          when Iir_Predefined_Ieee_Numeric_Std_Add_Uns_Uns
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Add_Slv_Slv
@@ -2313,6 +2175,8 @@ package body Synth.Vhdl_Eval is
             | Iir_Predefined_Ieee_Std_Logic_Arith_Add_Uns_Uns_Uns
             | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Add_Slv_Slv =>
             return Num_Std.Add_Uns_Uns (Param1, Param2, +Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Add_Uns_Uns =>
+            return Num_Bit.Add_Uns_Uns (Param1, Param2);
 
          when Iir_Predefined_Ieee_Numeric_Std_Add_Uns_Log
            | Iir_Predefined_Ieee_Std_Logic_Unsigned_Add_Slv_Log =>
@@ -2337,12 +2201,17 @@ package body Synth.Vhdl_Eval is
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Add_Int_Slv =>
             return Num_Std.Add_Uns_Nat
               (Param2, To_Uns64 (Read_Discrete (Param1)), +Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Add_Nat_Uns =>
+            return Num_Bit.Add_Uns_Nat
+              (Param2, To_Uns64 (Read_Discrete (Param1)));
 
          when Iir_Predefined_Ieee_Numeric_Std_Add_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Add_Sgn_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Arith_Add_Sgn_Sgn_Slv
             | Iir_Predefined_Ieee_Std_Logic_Signed_Add_Slv_Slv =>
             return Num_Std.Add_Sgn_Sgn (Param1, Param2, +Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Add_Sgn_Sgn =>
+            return Num_Bit.Add_Sgn_Sgn (Param1, Param2);
          when Iir_Predefined_Ieee_Numeric_Std_Add_Sgn_Int
             | Iir_Predefined_Ieee_Std_Logic_Signed_Add_Slv_Int =>
             return Num_Std.Add_Sgn_Int (Param1, Read_Discrete (Param2), +Expr);
@@ -2351,6 +2220,8 @@ package body Synth.Vhdl_Eval is
          when Iir_Predefined_Ieee_Numeric_Std_Add_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Add_Int_Slv =>
             return Num_Std.Add_Sgn_Int (Param2, Read_Discrete (Param1), +Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Add_Int_Sgn =>
+            return Num_Bit.Add_Sgn_Int (Param2, Read_Discrete (Param1));
 
          when Iir_Predefined_Ieee_Numeric_Std_Add_Sgn_Log
             | Iir_Predefined_Ieee_Std_Logic_Signed_Add_Slv_Log =>
@@ -2399,6 +2270,8 @@ package body Synth.Vhdl_Eval is
             | Iir_Predefined_Ieee_Std_Logic_Arith_Sub_Uns_Uns_Uns
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Sub_Slv_Slv =>
             return Num_Std.Sub_Uns_Uns (Param1, Param2, +Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Sub_Uns_Uns =>
+            return Num_Bit.Sub_Uns_Uns (Param1, Param2);
          when Iir_Predefined_Ieee_Numeric_Std_Sub_Uns_Nat
             | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Sub_Slv_Nat
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Sub_Slv_Int =>
@@ -2412,6 +2285,9 @@ package body Synth.Vhdl_Eval is
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Sub_Int_Slv =>
             return Num_Std.Sub_Nat_Uns
               (To_Uns64 (Read_Discrete (Param1)), Param2, +Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Sub_Nat_Uns =>
+            return Num_Bit.Sub_Nat_Uns
+              (To_Uns64 (Read_Discrete (Param1)), Param2);
 
          when Iir_Predefined_Ieee_Numeric_Std_Sub_Uns_Log
             | Iir_Predefined_Ieee_Std_Logic_Unsigned_Sub_Slv_Log =>
@@ -2427,6 +2303,8 @@ package body Synth.Vhdl_Eval is
             | Iir_Predefined_Ieee_Std_Logic_Arith_Sub_Sgn_Sgn_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Sub_Slv_Slv =>
             return Num_Std.Sub_Sgn_Sgn (Param1, Param2, +Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Sub_Sgn_Sgn =>
+            return Num_Bit.Sub_Sgn_Sgn (Param1, Param2);
          when Iir_Predefined_Ieee_Numeric_Std_Sub_Sgn_Int
             | Iir_Predefined_Ieee_Std_Logic_Signed_Sub_Slv_Int =>
             return Num_Std.Sub_Sgn_Int (Param1, Read_Discrete (Param2), +Expr);
@@ -2435,6 +2313,8 @@ package body Synth.Vhdl_Eval is
          when Iir_Predefined_Ieee_Numeric_Std_Sub_Int_Sgn
             | Iir_Predefined_Ieee_Std_Logic_Signed_Sub_Int_Slv =>
             return Num_Std.Sub_Int_Sgn (Read_Discrete (Param1), Param2, +Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Sub_Int_Sgn =>
+            return Num_Bit.Sub_Int_Sgn (Read_Discrete (Param1), Param2);
 
          when Iir_Predefined_Ieee_Numeric_Std_Sub_Sgn_Log
             | Iir_Predefined_Ieee_Std_Logic_Signed_Sub_Slv_Log =>
@@ -2479,9 +2359,14 @@ package body Synth.Vhdl_Eval is
 
          when Iir_Predefined_Ieee_Numeric_Std_Mul_Uns_Uns =>
             return Num_Std.Mul_Uns_Uns (Param1, Param2, +Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Mul_Uns_Uns =>
+            return Num_Bit.Mul_Uns_Uns (Param1, Param2);
          when Iir_Predefined_Ieee_Numeric_Std_Mul_Nat_Uns =>
             return Num_Std.Mul_Nat_Uns
               (To_Uns64 (Read_Discrete (Param1)), Param2, +Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Mul_Nat_Uns =>
+            return Num_Bit.Mul_Nat_Uns
+              (To_Uns64 (Read_Discrete (Param1)), Param2);
          when Iir_Predefined_Ieee_Numeric_Std_Mul_Uns_Nat =>
             return Num_Std.Mul_Uns_Nat
               (Param1, To_Uns64 (Read_Discrete (Param2)), +Expr);
@@ -2491,12 +2376,16 @@ package body Synth.Vhdl_Eval is
 
          when Iir_Predefined_Ieee_Numeric_Std_Mul_Sgn_Sgn =>
             return Num_Std.Mul_Sgn_Sgn (Param1, Param2, +Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Mul_Sgn_Sgn =>
+            return Num_Bit.Mul_Sgn_Sgn (Param1, Param2);
          when Iir_Predefined_Ieee_Numeric_Std_Mul_Sgn_Int =>
             return Num_Std.Mul_Sgn_Int (Param1, Read_Discrete (Param2), +Expr);
          when Iir_Predefined_Ieee_Numeric_Bit_Mul_Sgn_Int =>
             return Num_Bit.Mul_Sgn_Int (Param1, Read_Discrete (Param2));
          when Iir_Predefined_Ieee_Numeric_Std_Mul_Int_Sgn =>
             return Num_Std.Mul_Int_Sgn (Read_Discrete (Param1), Param2, +Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Mul_Int_Sgn =>
+            return Num_Bit.Mul_Int_Sgn (Read_Discrete (Param1), Param2);
 
          --  std_logic_arith."*"
          when Iir_Predefined_Ieee_Std_Logic_Arith_Mul_Uns_Uns_Uns
@@ -2516,6 +2405,8 @@ package body Synth.Vhdl_Eval is
 
          when Iir_Predefined_Ieee_Numeric_Std_Div_Uns_Uns =>
             return Num_Std.Div_Uns_Uns (Inst, Param1, Param2, Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Div_Uns_Uns =>
+            return Num_Bit.Div_Uns_Uns (Inst, Param1, Param2, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Div_Uns_Nat =>
             return Num_Std.Div_Uns_Nat
               (Inst, Param1, To_Uns64 (Read_Discrete (Param2)), Expr);
@@ -2525,11 +2416,19 @@ package body Synth.Vhdl_Eval is
          when Iir_Predefined_Ieee_Numeric_Std_Div_Nat_Uns =>
             return Num_Std.Div_Nat_Uns
               (Inst, To_Uns64 (Read_Discrete (Param1)), Param2, Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Div_Nat_Uns =>
+            return Num_Bit.Div_Nat_Uns
+              (Inst, To_Uns64 (Read_Discrete (Param1)), Param2, Expr);
 
          when Iir_Predefined_Ieee_Numeric_Std_Div_Sgn_Sgn =>
             return Num_Std.Div_Sgn_Sgn (Inst, Param1, Param2, Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Div_Sgn_Sgn =>
+            return Num_Bit.Div_Sgn_Sgn (Inst, Param1, Param2, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Div_Int_Sgn =>
             return Num_Std.Div_Int_Sgn
+              (Inst, Read_Discrete (Param1), Param2, Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Div_Int_Sgn =>
+            return Num_Bit.Div_Int_Sgn
               (Inst, Read_Discrete (Param1), Param2, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Div_Sgn_Int =>
             return Num_Std.Div_Sgn_Int
@@ -2541,6 +2440,9 @@ package body Synth.Vhdl_Eval is
          when Iir_Predefined_Ieee_Numeric_Std_Rem_Uns_Uns
             | Iir_Predefined_Ieee_Numeric_Std_Mod_Uns_Uns =>
             return Num_Std.Rem_Uns_Uns (Inst, Param1, Param2, Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Rem_Uns_Uns
+            | Iir_Predefined_Ieee_Numeric_Bit_Mod_Uns_Uns =>
+            return Num_Bit.Rem_Uns_Uns (Inst, Param1, Param2, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Rem_Uns_Nat
             | Iir_Predefined_Ieee_Numeric_Std_Mod_Uns_Nat =>
             return Num_Std.Rem_Uns_Nat
@@ -2553,12 +2455,20 @@ package body Synth.Vhdl_Eval is
             | Iir_Predefined_Ieee_Numeric_Std_Mod_Nat_Uns =>
             return Num_Std.Rem_Nat_Uns
               (Inst, To_Uns64 (Read_Discrete (Param1)), Param2, Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Rem_Nat_Uns
+            | Iir_Predefined_Ieee_Numeric_Bit_Mod_Nat_Uns =>
+            return Num_Bit.Rem_Nat_Uns
+              (Inst, To_Uns64 (Read_Discrete (Param1)), Param2, Expr);
 
          when Iir_Predefined_Ieee_Numeric_Std_Rem_Sgn_Sgn =>
-            return Num_Std.Rem_Sgn_Sgn
-              (Inst, Param1, Param2, Expr);
+            return Num_Std.Rem_Sgn_Sgn (Inst, Param1, Param2, Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Rem_Sgn_Sgn =>
+            return Num_Bit.Rem_Sgn_Sgn (Inst, Param1, Param2, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Rem_Int_Sgn =>
             return Num_Std.Rem_Int_Sgn
+              (Inst, Read_Discrete (Param1), Param2, Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Rem_Int_Sgn =>
+            return Num_Bit.Rem_Int_Sgn
               (Inst, Read_Discrete (Param1), Param2, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Rem_Sgn_Int =>
             return Num_Std.Rem_Sgn_Int
@@ -2568,10 +2478,14 @@ package body Synth.Vhdl_Eval is
               (Inst, Param1, Read_Discrete (Param2), Expr);
 
          when Iir_Predefined_Ieee_Numeric_Std_Mod_Sgn_Sgn =>
-            return Num_Std.Mod_Sgn_Sgn
-              (Inst, Param1, Param2, Expr);
+            return Num_Std.Mod_Sgn_Sgn (Inst, Param1, Param2, Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Mod_Sgn_Sgn =>
+            return Num_Bit.Mod_Sgn_Sgn (Inst, Param1, Param2, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Mod_Int_Sgn =>
             return Num_Std.Mod_Int_Sgn
+              (Inst, Read_Discrete (Param1), Param2, Expr);
+         when Iir_Predefined_Ieee_Numeric_Bit_Mod_Int_Sgn =>
+            return Num_Bit.Mod_Int_Sgn
               (Inst, Read_Discrete (Param1), Param2, Expr);
          when Iir_Predefined_Ieee_Numeric_Std_Mod_Sgn_Int =>
             return Num_Std.Mod_Sgn_Int
@@ -2855,11 +2769,19 @@ package body Synth.Vhdl_Eval is
             | Iir_Predefined_Ieee_Numeric_Std_Unsigned_To_Integer_Slv_Nat =>
             --  UNSIGNED to Natural.
             return Create_Memory_Discrete
-              (Eval_Unsigned_To_Integer (Param1, Expr), Res_Typ);
+              (Eval_Std_Unsigned_To_Integer (Param1, Expr), Res_Typ);
+         when Iir_Predefined_Ieee_Numeric_Bit_Toint_Uns_Nat =>
+            --  UNSIGNED to Natural.
+            return Create_Memory_Discrete
+              (Eval_Bit_Unsigned_To_Integer (Param1), Res_Typ);
          when Iir_Predefined_Ieee_Numeric_Std_Toint_Sgn_Int =>
             --  SIGNED to Integer
             return Create_Memory_Discrete
-              (Eval_Signed_To_Integer (Param1, Expr), Res_Typ);
+              (Eval_Std_Signed_To_Integer (Param1, Expr), Res_Typ);
+         when Iir_Predefined_Ieee_Numeric_Bit_Toint_Sgn_Int =>
+            --  SIGNED to Integer
+            return Create_Memory_Discrete
+              (Eval_Bit_Signed_To_Integer (Param1, Expr), Res_Typ);
          when Iir_Predefined_Ieee_Std_Logic_Arith_Conv_Integer_Log =>
             return Create_Memory_Discrete
               (Eval_Log_To_Integer (Param1, Expr), Res_Typ);
@@ -2871,29 +2793,48 @@ package body Synth.Vhdl_Eval is
             | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Shift_Left =>
             return Num_Std.Shift_Vec
               (Param1, Read_Uns32 (Param2), False, False);
+         when Iir_Predefined_Ieee_Numeric_Bit_Shf_Left_Uns_Nat
+            | Iir_Predefined_Ieee_Numeric_Bit_Shf_Left_Sgn_Nat =>
+            return Num_Bit.Shift_Vec
+              (Param1, Read_Uns32 (Param2), False, False);
          when Iir_Predefined_Ieee_Numeric_Std_Shf_Right_Uns_Nat
             | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Shift_Right =>
             return Num_Std.Shift_Vec
               (Param1, Read_Uns32 (Param2), True, False);
+         when Iir_Predefined_Ieee_Numeric_Bit_Shf_Right_Uns_Nat =>
+            return Num_Bit.Shift_Vec
+              (Param1, Read_Uns32 (Param2), True, False);
          when Iir_Predefined_Ieee_Numeric_Std_Shf_Right_Sgn_Nat =>
             return Num_Std.Shift_Vec (Param1, Read_Uns32 (Param2), True, True);
+         when Iir_Predefined_Ieee_Numeric_Bit_Shf_Right_Sgn_Nat =>
+            return Num_Bit.Shift_Vec (Param1, Read_Uns32 (Param2), True, True);
          when Iir_Predefined_Ieee_Numeric_Std_Rot_Left_Uns_Nat
             | Iir_Predefined_Ieee_Numeric_Std_Rot_Left_Sgn_Nat
             | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Rotate_Left =>
             return Num_Std.Rotate_Vec (Param1, Read_Uns32 (Param2), False);
+         when Iir_Predefined_Ieee_Numeric_Bit_Rot_Left_Uns_Nat
+            | Iir_Predefined_Ieee_Numeric_Bit_Rot_Left_Sgn_Nat =>
+            return Num_Bit.Rotate_Vec (Param1, Read_Uns32 (Param2), False);
          when Iir_Predefined_Ieee_Numeric_Std_Rot_Right_Uns_Nat
             | Iir_Predefined_Ieee_Numeric_Std_Rot_Right_Sgn_Nat
             | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Rotate_Right =>
             return Num_Std.Rotate_Vec (Param1, Read_Uns32 (Param2), True);
+         when Iir_Predefined_Ieee_Numeric_Bit_Rot_Right_Uns_Nat
+            | Iir_Predefined_Ieee_Numeric_Bit_Rot_Right_Sgn_Nat =>
+            return Num_Bit.Rotate_Vec (Param1, Read_Uns32 (Param2), True);
 
          when Iir_Predefined_Ieee_Numeric_Std_Resize_Uns_Nat
             | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Resize_Slv_Nat =>
             return Num_Std.Resize_Vec (Param1, Read_Uns32 (Param2), False);
+         when Iir_Predefined_Ieee_Numeric_Bit_Resize_Uns_Nat =>
+            return Num_Bit.Resize_Vec (Param1, Read_Uns32 (Param2), False);
          when Iir_Predefined_Ieee_Numeric_Std_Resize_Uns_Uns
             | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Resize_Slv_Slv =>
             return Num_Std.Resize_Vec (Param1, Param2.Typ.Abound.Len, False);
          when Iir_Predefined_Ieee_Numeric_Std_Resize_Sgn_Nat =>
             return Num_Std.Resize_Vec (Param1, Read_Uns32 (Param2), True);
+         when Iir_Predefined_Ieee_Numeric_Bit_Resize_Sgn_Nat =>
+            return Num_Bit.Resize_Vec (Param1, Read_Uns32 (Param2), True);
          when Iir_Predefined_Ieee_Numeric_Std_Resize_Sgn_Sgn =>
             return Num_Std.Resize_Vec (Param1, Param2.Typ.Abound.Len, True);
 

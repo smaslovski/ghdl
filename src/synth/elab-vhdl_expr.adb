@@ -1043,10 +1043,9 @@ package body Elab.Vhdl_Expr is
             | Iir_Kind_Unit_Declaration =>
             return Get_Subtype_Object (Syn_Inst, Get_Type (Name));
 
-         when Iir_Kind_String_Literal8
-           | Iir_Kind_Aggregate =>
-            --  TODO: the value should be computed (once) and its type
-            --  returned.
+         when Iir_Kind_String_Literal8 =>
+            return Synth_Subtype_Indication (Syn_Inst, Get_Type (Name));
+         when Iir_Kind_Aggregate =>
             return Synth_Subtype_Indication (Syn_Inst, Get_Type (Name));
 
          when Iir_Kind_Image_Attribute =>

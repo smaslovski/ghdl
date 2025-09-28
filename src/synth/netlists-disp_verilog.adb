@@ -68,37 +68,6 @@ package body Netlists.Disp_Verilog is
       end if;
    end Disp_Pval;
 
-   procedure Disp_Pval_String (Pv : Pval)
-   is
-      Len : constant Uns32 := Get_Pval_Length (Pv);
-      V : Logic_32;
-      Woff : Uns32;
-      Boff : Natural;
-   begin
-      pragma Assert (Len mod 8 = 0);
-      if Len = 0 then
-         Wr ('"');
-         Wr ('"');
-      else
-         Woff := (Len - 1) / 32;
-         Boff := Natural ((Len - 1) - Woff * 32);
-         Wr ('"');
-         V := Read_Pval (Pv, Woff);
-         loop
-            Wr (Character'Val (Shift_Right (V.Val, Boff - 7) and 16#ff#));
-            if Boff = 7 then
-               exit when Woff = 0;
-               Boff := 31;
-               Woff := Woff - 1;
-               V := Read_Pval (Pv, Woff);
-            else
-               Boff := Boff - 8;
-            end if;
-         end loop;
-         Wr ('"');
-      end if;
-   end Disp_Pval_String;
-
    --  If DRV drives a single Id_Nop return the output of the Nop gate.
    --  This gate is used to simple rename the output.
    function Is_Nop_Drv (Drv : Net) return Net
@@ -959,13 +928,13 @@ package body Netlists.Disp_Verilog is
             Disp_Template ("  assign \o0 = (\i0 < \i1) ? \i0 : \i1;" & NL,
                            Inst);
          when Id_Smin =>
-            Disp_Template ("  \o0 <= \i0 when \si0 < \si1 else \i1;" & NL,
+            Disp_Template ("  assign \o0 = (\si0 < \si1) ? \i0 : \i1;" & NL,
                            Inst);
          when Id_Umax =>
             Disp_Template ("  assign \o0 = (\i0 > \i1) ? \i0 : \i1;" & NL,
                            Inst);
          when Id_Smax =>
-            Disp_Template ("  \o0 <= \i0 when \si0 > \si1 else \i1;" & NL,
+            Disp_Template ("  assign \o0 = (\si0 > \si1) ? \i0 : \i1;" & NL,
                            Inst);
          when Id_Umul =>
             Disp_Template ("  assign \o0 = \i0 * \i1; // umul" & NL, Inst);

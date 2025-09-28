@@ -814,7 +814,8 @@ package body Vhdl.Evaluation is
                   W := Discrete_Range_Width (Res_Rng);
                   return Create_Discrete_Type (Res_Rng, Base_Typ.Sz, W);
                end;
-            when Iir_Kind_Floating_Type_Definition =>
+            when Iir_Kind_Floating_Type_Definition
+               | Iir_Kind_Floating_Subtype_Definition =>
                return Create_Float_Type ((Dir_To, Fp64'First, Fp64'Last));
             when Iir_Kind_Array_Type_Definition =>
                declare
@@ -3510,7 +3511,6 @@ package body Vhdl.Evaluation is
       Prefix : Iir;
    begin
       Prefix := Get_Prefix (Expr);
-      Prefix := Eval_Static_Expr (Prefix);
 
       --  Eval indexes
       declare
@@ -3535,6 +3535,11 @@ package body Vhdl.Evaluation is
             end if;
          end loop;
       end;
+
+      --  Then evaluate prefix.
+      --  (See comment for slice: the type of the evaluated expression may be
+      --   different from the type of the prefix).
+      Prefix := Eval_Static_Expr (Prefix);
 
       case Get_Kind (Prefix) is
          when Iir_Kind_Aggregate =>
@@ -3567,12 +3572,15 @@ package body Vhdl.Evaluation is
       Eval_Range_Bounds (Suffix, Dir, Left, Right);
 
       Prefix := Get_Prefix (Expr);
-      Prefix := Eval_Static_Expr (Prefix);
 
+      --  Immediately extract type from the prefix
+      --  (the type of the evaluated expression might not be correct).
       Idx_Type := Get_Index_Type (Get_Type (Prefix), 0);
       Idx_Rng := Get_Range_Constraint (Idx_Type);
 
       Pos := Eval_Pos_In_Range (Idx_Rng, Left);
+
+      Prefix := Eval_Static_Expr (Prefix);
 
       case Get_Kind (Prefix) is
          when Iir_Kind_String_Literal8 =>
