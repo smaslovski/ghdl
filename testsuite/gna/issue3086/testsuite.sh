@@ -2,7 +2,9 @@
 
 . ../../testenv.sh
 
-GHDL_STD_FLAGS=--std=08
-synth_failure mwe.vhdl -e
+analyze test2.vhdl
+elab_simulate tb_test2
+
+clean
 
 echo "Test successful"
