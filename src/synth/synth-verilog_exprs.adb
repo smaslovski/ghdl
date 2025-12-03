@@ -21,6 +21,7 @@ with Ada.Unchecked_Deallocation;
 with Netlists.Utils; use Netlists.Utils;
 with Netlists.Gates; use Netlists.Gates;
 with Netlists.Folds; use Netlists.Folds;
+with Netlists.Locations; use Netlists.Locations;
 
 with Synth.Verilog_Sources; use Synth.Verilog_Sources;
 with Synth.Verilog_Environment; use Synth.Verilog_Environment.Env;
@@ -59,7 +60,8 @@ package body Synth.Verilog_Exprs is
             begin
                --  Extract sub-value from the expression.
                N := Get_Net (Ctxt, Val);
-               N := Build2_Extract (Ctxt, N, Off, Uns32 (Wd));
+               N := Build2_Extract (Ctxt, N, Off, Uns32 (Wd),
+                                    Get_Location (Get_Net_Parent (N)));
                return Create_Value_Net (N, Res_Typ);
             end;
          when Value_Memory =>
@@ -525,7 +527,7 @@ package body Synth.Verilog_Exprs is
             Res := Build2_Sresize
               (Ctxt, Nv, Get_Type_Bitwidth (Rtyp), Get_Location (N));
          when Convop_Lv_Log =>
-            Res := Build2_Extract (Ctxt, Nv, 0, 1);
+            Res := Build2_Extract (Ctxt, Nv, 0, 1, Get_Location (N));
          when Convop_Lv_Nop =>
             Res := Nv;
          when others =>
@@ -642,7 +644,8 @@ package body Synth.Verilog_Exprs is
    end Synth_Static_Concatenation;
 
    function Synth_Dynamic_Concatenation (Inst : Synth_Instance_Acc;
-                                         Arr : Valtyp_Array_Acc) return Net
+                                         Arr : Valtyp_Array_Acc;
+                                         Loc : Location_Type) return Net
    is
       pragma Assert (Arr'First = 1);
       Ctxt : constant Context_Acc := Get_Build (Inst);
@@ -654,7 +657,7 @@ package body Synth.Verilog_Exprs is
          Net_Arr (Arr'Last - I + 1) := Get_Net (Ctxt, Arr (I));
       end loop;
 
-      Res_Net := Build2_Concat (Ctxt, Net_Arr.all);
+      Res_Net := Build2_Concat (Ctxt, Net_Arr.all, Loc);
 
       Free_Net_Array (Net_Arr);
 
@@ -724,7 +727,7 @@ package body Synth.Verilog_Exprs is
          declare
             Res_Net : Net;
          begin
-            Res_Net := Synth_Dynamic_Concatenation (Inst, Arr);
+            Res_Net := Synth_Dynamic_Concatenation (Inst, Arr, +N);
             Res := Create_Value_Net (Res_Net, Rtyp);
          end;
       end if;
@@ -779,20 +782,20 @@ package body Synth.Verilog_Exprs is
             Nt : Net;
             Res_Net : Net;
          begin
-            Nt := Synth_Dynamic_Concatenation (Inst, Arr);
+            Nt := Synth_Dynamic_Concatenation (Inst, Arr, +N);
 
             if Count < 8 then
                declare
                   Arr2 : constant Net_Array (1 .. 8) := (others => Nt);
                begin
-                  Res_Net := Build2_Concat (Ctxt, Arr2 (1 .. Count));
+                  Res_Net := Build2_Concat (Ctxt, Arr2 (1 .. Count), +N);
                end;
             else
                declare
                   Arr2 : Net_Array_Acc;
                begin
                   Arr2 := new Net_Array'(1 .. Count => Nt);
-                  Res_Net := Build2_Concat (Ctxt, Arr2.all);
+                  Res_Net := Build2_Concat (Ctxt, Arr2.all, +N);
                   Free_Net_Array (Arr2);
                end;
             end if;
@@ -867,7 +870,7 @@ package body Synth.Verilog_Exprs is
             Nt := Build_Dyn_Extract (Ctxt, Nt, Doff, Off.Net_Off, W);
             Set_Location (Nt, N);
          else
-            Nt := Build2_Extract (Ctxt, Nt, Off.Net_Off, W);
+            Nt := Build2_Extract (Ctxt, Nt, Off.Net_Off, W, Get_Location (N));
          end if;
          Res := Create_Value_Net (Nt, Typ);
       end if;

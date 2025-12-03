@@ -263,8 +263,7 @@ package body Synth.Vhdl_Eval is
             else
                raise Internal_Error;
             end if;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Compare;
 
@@ -416,8 +415,7 @@ package body Synth.Vhdl_Eval is
             end if;
          when 8 =>
             null;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Check_Integer_Overflow;
 
@@ -553,8 +551,7 @@ package body Synth.Vhdl_Eval is
                end loop;
                return Create_Memory_Fp64 (Res, Etyp);
             end;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Eval_Vector_Maximum;
 
@@ -608,8 +605,7 @@ package body Synth.Vhdl_Eval is
                end loop;
                return Create_Memory_Fp64 (Res, Etyp);
             end;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Eval_Vector_Minimum;
 
@@ -1614,9 +1610,11 @@ package body Synth.Vhdl_Eval is
             end if;
 
          when Iir_Predefined_Array_Sll
-           | Iir_Predefined_Array_Srl
-           | Iir_Predefined_Array_Rol
-           | Iir_Predefined_Array_Ror =>
+            | Iir_Predefined_Array_Srl
+            | Iir_Predefined_Array_Sla
+            | Iir_Predefined_Array_Sra
+            | Iir_Predefined_Array_Rol
+            | Iir_Predefined_Array_Ror =>
             return Execute_Shift_Operator
               (Param1, Read_Discrete (Param2), 0, Def);
 
@@ -2990,7 +2988,8 @@ package body Synth.Vhdl_Eval is
             end;
 
          when Iir_Predefined_Ieee_1164_To_01_Slv_Log
-            | Iir_Predefined_Ieee_Numeric_Std_To_01_Uns =>
+            | Iir_Predefined_Ieee_Numeric_Std_To_01_Uns
+            | Iir_Predefined_Ieee_Numeric_Std_To_01_Sgn =>
             declare
                Len : constant Uns32 := Param1.Typ.Abound.Len;
                S : Std_Ulogic;
@@ -3055,7 +3054,7 @@ package body Synth.Vhdl_Eval is
          when Iir_Predefined_Ieee_1164_To_Stdlogicvector_Suv
            | Iir_Predefined_Ieee_1164_To_Stdulogicvector_Slv =>
             --  TODO
-            return (Param1.Typ, Param1.Mem);
+            return Unshare (Param1);
 
          when Iir_Predefined_Ieee_1164_To_Hstring
             | Iir_Predefined_Ieee_Numeric_Std_To_Hstring_Uns =>
@@ -3211,6 +3210,13 @@ package body Synth.Vhdl_Eval is
             begin
                return Create_Memory_Fp64 (Sqrt (Read_Fp64 (Param1)), Res_Typ);
             end;
+         when Iir_Predefined_Ieee_Math_Real_Cbrt =>
+            declare
+               function Cbrt (Arg : Fp64) return Fp64;
+               pragma Import (C, Cbrt);
+            begin
+               return Create_Memory_Fp64 (Cbrt (Read_Fp64 (Param1)), Res_Typ);
+            end;
          when Iir_Predefined_Ieee_Math_Real_Exp =>
             declare
                function Exp (Arg : Fp64) return Fp64;
@@ -3281,6 +3287,27 @@ package body Synth.Vhdl_Eval is
             begin
                return Create_Memory_Fp64 (Cos (Read_Fp64 (Param1)), Res_Typ);
             end;
+         when Iir_Predefined_Ieee_Math_Real_Tan =>
+            declare
+               function Tan (Arg : Fp64) return Fp64;
+               pragma Import (C, Tan);
+            begin
+               return Create_Memory_Fp64 (Tan (Read_Fp64 (Param1)), Res_Typ);
+            end;
+         when Iir_Predefined_Ieee_Math_Real_Arcsin =>
+            declare
+               function Asin (Arg : Fp64) return Fp64;
+               pragma Import (C, Asin);
+            begin
+               return Create_Memory_Fp64 (Asin (Read_Fp64 (Param1)), Res_Typ);
+            end;
+         when Iir_Predefined_Ieee_Math_Real_Arccos =>
+            declare
+               function Acos (Arg : Fp64) return Fp64;
+               pragma Import (C, Acos);
+            begin
+               return Create_Memory_Fp64 (Acos (Read_Fp64 (Param1)), Res_Typ);
+            end;
          when Iir_Predefined_Ieee_Math_Real_Arctan =>
             declare
                function Atan (Arg : Fp64) return Fp64;
@@ -3301,6 +3328,34 @@ package body Synth.Vhdl_Eval is
                pragma Import (C, Cosh);
             begin
                return Create_Memory_Fp64 (Cosh (Read_Fp64 (Param1)), Res_Typ);
+            end;
+         when Iir_Predefined_Ieee_Math_Real_Tanh =>
+            declare
+               function Tanh (Arg : Fp64) return Fp64;
+               pragma Import (C, Tanh);
+            begin
+               return Create_Memory_Fp64 (Tanh (Read_Fp64 (Param1)), Res_Typ);
+            end;
+         when Iir_Predefined_Ieee_Math_Real_Arcsinh =>
+            declare
+               function Asinh (Arg : Fp64) return Fp64;
+               pragma Import (C, Asinh);
+            begin
+               return Create_Memory_Fp64 (Asinh (Read_Fp64 (Param1)), Res_Typ);
+            end;
+         when Iir_Predefined_Ieee_Math_Real_Arccosh =>
+            declare
+               function Acosh (Arg : Fp64) return Fp64;
+               pragma Import (C, Acosh);
+            begin
+               return Create_Memory_Fp64 (Acosh (Read_Fp64 (Param1)), Res_Typ);
+            end;
+         when Iir_Predefined_Ieee_Math_Real_Arctanh =>
+            declare
+               function Atanh (Arg : Fp64) return Fp64;
+               pragma Import (C, Atanh);
+            begin
+               return Create_Memory_Fp64 (Atanh (Read_Fp64 (Param1)), Res_Typ);
             end;
 
          when Iir_Predefined_Foreign_Textio_Read_Real =>

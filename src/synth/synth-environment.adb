@@ -252,7 +252,7 @@ package body Synth.Environment is
 
    --  Concatenate when possible partial assignments of HEAD.
    procedure Merge_Partial_Assignments
-     (Ctxt : Context_Acc; Head : Seq_Assign_Value)
+     (Ctxt : Context_Acc; Head : Seq_Assign_Value; Loc : Location_Type)
    is
       use Netlists.Concats;
       First : Partial_Assign;
@@ -298,7 +298,7 @@ package body Synth.Environment is
                First_Record : Partial_Assign_Record renames
                  Partial_Assign_Table.Table (First);
             begin
-               Build (Ctxt, Concat, First_Record.Value);
+               Build (Ctxt, Concat, Loc, First_Record.Value);
                First_Record.Next := Next;
 
             end;
@@ -929,6 +929,7 @@ package body Synth.Environment is
                                           Value : out Net)
    is
       Gate : constant Instance := Get_Net_Parent (Wire_Rec.Gate);
+      Loc : constant Location_Type := Get_Location (Wire_Rec.Decl);
       Inp : Conc_Assign;
       Inp_Off : Uns32;
       Inp_Wd : Width;
@@ -1045,7 +1046,8 @@ package body Synth.Environment is
                declare
                   V : Net;
                begin
-                  V := Build2_Extract (Ctxt, Inp_Net, Inp_Src_Off, Inp_Wd);
+                  V := Build2_Extract
+                    (Ctxt, Inp_Net, Inp_Src_Off, Inp_Wd, Loc);
                   Finalize_Assignment_Append (Data, V);
                end;
             else
@@ -1061,7 +1063,7 @@ package body Synth.Environment is
                         --  more efficient to recreate a const gate.
                         Unk := Build2_Extract
                           (Ctxt, Get_Input_Net (Gate, 1),
-                           Data.Res_Off, Inp_Off - Data.Res_Off);
+                           Data.Res_Off, Inp_Off - Data.Res_Off, Loc);
                      when others =>
                         Warning_No_Assignment
                           (Wire_Rec.Decl, Data.Res_Off, Inp_Off - 1);
@@ -1088,12 +1090,13 @@ package body Synth.Environment is
                   Voff : Uns32;
                   Conc : Conc_Assign;
                begin
-                  Res := Build2_Extract (Ctxt, Inp_Net, Inp_Src_Off, Inp_Wd);
+                  Res := Build2_Extract
+                    (Ctxt, Inp_Net, Inp_Src_Off, Inp_Wd, Loc);
                   Conc := Get_Conc_Chain (Inp);
                   for I in 2 .. Inp_Nbr loop
                      Vc := Get_Conc_Value (Conc);
                      Voff := Data.Res_Off - Get_Conc_Offset (Conc);
-                     V := Build2_Extract (Ctxt, Vc, Voff, Inp_Wd);
+                     V := Build2_Extract (Ctxt, Vc, Voff, Inp_Wd, Loc);
                      case Cls is
                         when Tristate =>
                            Res := Build_Resolver (Ctxt, Res, V);
@@ -1120,9 +1123,11 @@ package body Synth.Environment is
          Value := Build_Concat2 (Ctxt,
                                  Get_Conc_Value (Data.Last_Assign),
                                  Get_Conc_Value (Data.First_Assign));
+         Set_Location (Value, Loc);
       else
          Value := Build_Concatn
            (Ctxt, Data.Wire_Width, Uns32 (Data.Nbr_Assign));
+         Set_Location (Value, Loc);
          declare
             Inst : constant Instance := Get_Net_Parent (Value);
             Asgn : Conc_Assign;
@@ -1362,11 +1367,11 @@ package body Synth.Environment is
 
    --  Get the current value of W for WD bits at offset OFF.
    function Get_Current_Assign_Value
-     (Ctxt : Context_Acc; Wid : Wire_Id; Off : Uns32; Wd : Width)
-     return Net
+     (Ctxt : Context_Acc; Wid : Wire_Id; Off : Uns32; Wd : Width) return Net
    is
       Wire_Rec : Wire_Id_Record renames Wire_Id_Table.Table (Wid);
       pragma Assert (Wire_Rec.Kind /= Wire_None);
+      Loc : constant Location_Type := Get_Location (Wire_Rec.Decl);
       First_Seq : Seq_Assign;
    begin
       --  Latest seq assign
@@ -1374,7 +1379,7 @@ package body Synth.Environment is
 
       --  If no seq assign, return current value.
       if First_Seq = No_Seq_Assign then
-         return Build2_Extract (Ctxt, Wire_Rec.Gate, Off, Wd);
+         return Build2_Extract (Ctxt, Wire_Rec.Gate, Off, Wd, Loc);
       end if;
 
       --  If the current value is static, just return it.
@@ -1436,7 +1441,7 @@ package body Synth.Environment is
                         Append
                           (Vec,
                            Build2_Extract (Ctxt, Pr.Value,
-                                           Cur_Off - Pr.Offset, Cur_Wd));
+                                           Cur_Off - Pr.Offset, Cur_Wd, Loc));
                      end if;
                      exit;
                   end if;
@@ -1462,7 +1467,7 @@ package body Synth.Environment is
                      if Seq = No_Seq_Assign then
                         --  Extract from gate.
                         Append (Vec, Build2_Extract (Ctxt, Wire_Rec.Gate,
-                                                     Cur_Off, Cur_Wd));
+                                                     Cur_Off, Cur_Wd, Loc));
                         exit;
                      end if;
                      if Get_Assign_Is_Static (Seq) then
@@ -1483,7 +1488,7 @@ package body Synth.Environment is
          end loop;
 
          --  Concat
-         Build (Ctxt, Vec, Res);
+         Build (Ctxt, Vec, Get_Location (Wire_Rec.Decl), Res);
          return Res;
       end;
    end Get_Current_Assign_Value;
@@ -1596,6 +1601,7 @@ package body Synth.Environment is
                         P (I).Asgns := Get_Partial_Next (Asgn);
                      else
                         N (I) := Build_Extract (Ctxt, Val, Off - P_Off, Wd);
+                        Copy_Location (N (I), Val);
                         if P_Off + P_W = Off + Wd then
                            P (I).Asgns := Get_Partial_Next (Asgn);
                         end if;
@@ -1866,8 +1872,8 @@ package body Synth.Environment is
          end if;
          --  Merge partial assigns as much as possible.  This reduce
          --  propagation of splits.
-         Merge_Partial_Assignments (Ctxt, Fv);
-         Merge_Partial_Assignments (Ctxt, Tv);
+         Merge_Partial_Assignments (Ctxt, Fv, Loc);
+         Merge_Partial_Assignments (Ctxt, Tv, Loc);
          if not Merge_Static_Assigns (W, Tv, Fv) then
             Merge_Assigns (Ctxt, W, Sel, Fv, Tv, Loc);
          end if;
@@ -1996,6 +2002,8 @@ package body Synth.Environment is
      (Ctxt : Builders.Context_Acc; Seq : Seq_Assign; Asgn : Partial_Assign)
    is
       Seq_Asgn : Seq_Assign_Record renames Assign_Table.Table (Seq);
+      Loc : constant Location_Type :=
+        Get_Location (Wire_Id_Table.Table (Seq_Asgn.Id).Decl);
       El, Last_El : Partial_Assign;
       Inserted : Boolean;
    begin
@@ -2047,7 +2055,8 @@ package body Synth.Environment is
                   --  Shrink EL.
                   P.Value := Build2_Extract (Ctxt, P.Value,
                                              Off => V_Next - P.Offset,
-                                             W => P_Next - V_Next);
+                                             W => P_Next - V_Next,
+                                             Loc => Loc);
                   P.Offset := V_Next;
                   if not Inserted then
                      if Last_El /= No_Partial_Assign then
@@ -2069,7 +2078,8 @@ package body Synth.Environment is
                   --  Shrink EL.
                   P.Value := Build2_Extract (Ctxt, P.Value,
                                              Off => 0,
-                                             W => V.Offset - P.Offset);
+                                             W => V.Offset - P.Offset,
+                                             Loc => Loc);
                   pragma Assert (not Inserted);
                   V.Next := P.Next;
                   P.Next := Asgn;
@@ -2087,12 +2097,14 @@ package body Synth.Environment is
                     ((Next => P.Next,
                       Value => Build2_Extract (Ctxt, P.Value,
                                                Off => V_Next - P.Offset,
-                                               W => P_Next - V_Next),
+                                               W => P_Next - V_Next,
+                                               Loc => Loc),
                       Offset => V_Next));
                   V.Next := Partial_Assign_Table.Last;
                   P.Value := Build2_Extract (Ctxt, P.Value,
                                              Off => 0,
-                                             W => V.Offset - P.Offset);
+                                             W => V.Offset - P.Offset,
+                                             Loc => Loc);
                   P.Next := Asgn;
                   Inserted := True;
                   --  No more possible overlaps.

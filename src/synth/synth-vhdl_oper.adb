@@ -158,11 +158,9 @@ package body Synth.Vhdl_Oper is
          when Type_Slice =>
             return Create_Vec_Type_By_Length (Res.W, Res.Slice_El);
 
-         when Type_Unbounded_Vector =>
-            raise Internal_Error;
+         when Type_Unbounded_Vector => raise Internal_Error;
 
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Create_Res_Bound;
 
@@ -225,8 +223,7 @@ package body Synth.Vhdl_Oper is
             when Std_Logic_D_Pos =>
                B := 0;
                M := 0;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
          Mask (Woff) := Mask (Woff) or Shift_Left (M, Boff);
          Vals (Woff) := Vals (Woff) or Shift_Left (B, Boff);
@@ -490,7 +487,7 @@ package body Synth.Vhdl_Oper is
                end if;
             end if;
             Sel := Build2_Compare (Ctxt, Id_Eq,
-                                   Build2_Extract (Ctxt, L_Net, Pos, 1),
+                                   Build2_Extract (Ctxt, L_Net, Pos, 1, +Expr),
                                    R_Net);
             Set_Location (Sel, Expr);
             Res := Build_Mux2 (Ctxt, Sel, Res, Build2_Const_Int (Ctxt, V, W));
@@ -631,7 +628,8 @@ package body Synth.Vhdl_Oper is
                N := Build2_Compare (Ctxt, Id, Ln, Rn);
             elsif L.Typ.W < R.Typ.W then
                --  Truncate right.
-               Rn := Build_Extract (Ctxt, Rn, R.Typ.W - L.Typ.W, L.Typ.W);
+               Rn := Build2_Extract
+                 (Ctxt, Rn, R.Typ.W - L.Typ.W, L.Typ.W, +Expr);
                --  Because it has been truncated, it cannot be equal.
                if Id = Id_Ule then
                   N := Build2_Compare (Ctxt, Id_Ult, Ln, Rn);
@@ -1367,6 +1365,7 @@ package body Synth.Vhdl_Oper is
                declare
                   use Mutils;
                   Rint : constant Int64 := Get_Static_Discrete (R);
+                  Loc : constant Location_Type := Get_Location (Expr);
                   Log_R : Natural;
                   N : Net;
                begin
@@ -1374,9 +1373,8 @@ package body Synth.Vhdl_Oper is
                      Log_R := Clog2 (Uns64 (Rint));
                      pragma Assert (Log_R <= Natural (L.Typ.W));
                      N := Get_Net (Ctxt, L);
-                     N := Build2_Extract (Ctxt, N, 0, Width (Log_R));
-                     N := Build2_Uresize
-                       (Ctxt, N, L.Typ.W, Get_Location (Expr));
+                     N := Build2_Extract (Ctxt, N, 0, Width (Log_R), Loc);
+                     N := Build2_Uresize (Ctxt, N, L.Typ.W, Loc);
                      return Create_Value_Net (N, Res_Typ);
                   end if;
                end;

@@ -22,6 +22,7 @@ with Str_Table;
 with Netlists; use Netlists;
 with Netlists.Utils; use Netlists.Utils;
 with Netlists.Builders; use Netlists.Builders;
+with Netlists.Folds; use Netlists.Folds;
 
 with Vhdl.Utils; use Vhdl.Utils;
 with Vhdl.Nodes_Utils;
@@ -447,8 +448,8 @@ package body Synth.Vhdl_Aggr is
       end loop;
    end Fill_Record_Aggregate;
 
-   function Valtyp_Array_To_Net (Ctxt : Context_Acc; Tab : Valtyp_Array)
-                                return Net
+   function Valtyp_Array_To_Net
+     (Ctxt : Context_Acc; Tab : Valtyp_Array; Loc : Location_Type) return Net
    is
       Res : Net;
       Arr : Net_Array_Acc;
@@ -456,13 +457,14 @@ package body Synth.Vhdl_Aggr is
    begin
       Arr := new Net_Array (1 .. Tab'Length);
       Idx := 0;
-      for I in Arr'Range loop
+      --  Use reverse to handle build2_concat reverse.
+      for I in reverse Arr'Range loop
          if Tab (I).Val /= null then
             Idx := Idx + 1;
             Arr (Idx) := Get_Net (Ctxt, Tab (I));
          end if;
       end loop;
-      Concat_Array (Ctxt, Arr (1 .. Idx), Res);
+      Res := Build2_Concat (Ctxt, Arr (1 .. Idx), Loc);
       Free_Net_Array (Arr);
       return Res;
    end Valtyp_Array_To_Net;
@@ -470,7 +472,8 @@ package body Synth.Vhdl_Aggr is
    function Valtyp_Array_To_Valtyp (Ctxt : Context_Acc;
                                     Tab_Res : Valtyp_Array;
                                     Res_Typ : Type_Acc;
-                                    Const_P : Boolean) return Valtyp
+                                    Const_P : Boolean;
+                                    Loc : Location_Type) return Valtyp
    is
       Res : Valtyp;
    begin
@@ -491,7 +494,7 @@ package body Synth.Vhdl_Aggr is
          end;
       else
          Res := Create_Value_Net
-           (Valtyp_Array_To_Net (Ctxt, Tab_Res), Res_Typ);
+           (Valtyp_Array_To_Net (Ctxt, Tab_Res, Loc), Res_Typ);
       end if;
       return Res;
    end Valtyp_Array_To_Valtyp;
@@ -543,7 +546,8 @@ package body Synth.Vhdl_Aggr is
             raise Internal_Error;
       end case;
 
-      Res := Valtyp_Array_To_Valtyp (Ctxt, Tab_Res.all, Res_Typ, Const_P);
+      Res := Valtyp_Array_To_Valtyp
+        (Ctxt, Tab_Res.all, Res_Typ, Const_P, Get_Location (Aggr));
 
       Free_Valtyp_Array (Tab_Res);
 
@@ -626,7 +630,8 @@ package body Synth.Vhdl_Aggr is
             raise Internal_Error;
       end case;
 
-      Res := Valtyp_Array_To_Valtyp (Ctxt, Tab_Res.all, Res_Typ, Const_P);
+      Res := Valtyp_Array_To_Valtyp
+        (Ctxt, Tab_Res.all, Res_Typ, Const_P, Get_Location (Aggr));
 
       Free_Valtyp_Array (Tab_Res);
 
@@ -682,7 +687,8 @@ package body Synth.Vhdl_Aggr is
             end loop;
          else
             Res := Create_Value_Net
-              (Valtyp_Array_To_Net (Ctxt, Tab_Res.all), Res_Typ);
+              (Valtyp_Array_To_Net (Ctxt, Tab_Res.all, Get_Location (Aggr)),
+               Res_Typ);
          end if;
       end if;
 

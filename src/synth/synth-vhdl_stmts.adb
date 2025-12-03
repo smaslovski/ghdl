@@ -495,8 +495,7 @@ package body Synth.Vhdl_Stmts is
                N : Net;
             begin
                N := Build2_Extract
-                 (Ctxt, Get_Net (Ctxt, Val), Off * El_Typ.W, Typ.W);
-               Set_Location (N, Loc);
+                 (Ctxt, Get_Net (Ctxt, Val), Off * El_Typ.W, Typ.W, +Loc);
                return Create_Value_Net (N, Typ);
             end;
          when Value_Memory =>
@@ -532,8 +531,7 @@ package body Synth.Vhdl_Stmts is
                N : Net;
             begin
                N := Build2_Extract (Ctxt, Get_Net (Ctxt, Val),
-                                    El_Typ.Offs.Net_Off, El_Typ.Typ.W);
-               Set_Location (N, Loc);
+                                    El_Typ.Offs.Net_Off, El_Typ.Typ.W, +Loc);
                return Create_Value_Net (N, Typ);
             end;
          when Value_Memory =>
@@ -783,11 +781,11 @@ package body Synth.Vhdl_Stmts is
             --  Do not try to extract if the net is null.
             N := Build_Dyn_Extract (Ctxt, N, Dyn.Voff,
                                     Off + Dyn.Pfx_Off.Net_Off, Res_Typ.W);
+            Set_Location (N, Loc);
          else
             pragma Assert (not Is_Static (Obj.Val));
-            N := Build2_Extract (Ctxt, N, Off, Res_Typ.W);
+            N := Build2_Extract (Ctxt, N, Off, Res_Typ.W, +Loc);
          end if;
-         Set_Location (N, Loc);
       end if;
       return Create_Value_Net (N, Res_Typ);
    end Synth_Read_Memory;
@@ -805,7 +803,8 @@ package body Synth.Vhdl_Stmts is
                when Value_Net
                  | Value_Wire =>
                   N := Build2_Extract (Ctxt, Get_Net (Ctxt, Targ.Obj),
-                                       Targ.Off.Net_Off, Targ.Targ_Type.W);
+                                       Targ.Off.Net_Off, Targ.Targ_Type.W,
+                                      +Loc);
                   return Create_Value_Net (N, Targ.Targ_Type);
                when Value_File =>
                   return Create_Value_File
@@ -829,8 +828,7 @@ package body Synth.Vhdl_Stmts is
                  | Value_Sig_Val =>
                   raise Internal_Error;
             end case;
-         when Target_Aggregate =>
-            raise Internal_Error;
+         when Target_Aggregate => raise Internal_Error;
          when Target_Memory =>
             return Synth_Read_Memory (Syn_Inst, Targ.Mem_Obj, Targ.Targ_Type,
                                       0, Targ.Mem_Dyn, Loc);
@@ -1570,7 +1568,7 @@ package body Synth.Vhdl_Stmts is
       if Nbr_Choices = 0 then
          Sel_Net := No_Net;
       else
-         Sel_Net := Build2_Concat (Ctxt, Nets (1 .. Nbr_Choices));
+         Sel_Net := Build2_Concat (Ctxt, Nets (1 .. Nbr_Choices), +Stmt);
       end if;
 
       --  Create list of wire_id, sort it.
@@ -1927,7 +1925,7 @@ package body Synth.Vhdl_Stmts is
          if Nbr_Choices = 0 then
             Sel_Net := No_Net;
          else
-            Sel_Net := Build2_Concat (Ctxt, Nets (1 .. Nbr_Choices));
+            Sel_Net := Build2_Concat (Ctxt, Nets (1 .. Nbr_Choices), +Stmt);
          end if;
 
          declare
@@ -3925,8 +3923,7 @@ package body Synth.Vhdl_Stmts is
                  | Iir_Kind_Psl_Assert_Directive
                  | Iir_Kind_Psl_Assume_Directive =>
                   Sev_V := Error_Severity;
-               when others =>
-                  raise Internal_Error;
+               when others => raise Internal_Error;
             end case;
          else
             Sev_V := Natural (Read_Discrete (Sev));
@@ -3981,8 +3978,7 @@ package body Synth.Vhdl_Stmts is
                   Put_Line_Err ("Assumption violation.");
                when Iir_Kind_Psl_Cover_Directive =>
                   Put_Line_Err ("sequence covered.");
-               when others =>
-                  raise Internal_Error;
+               when others => raise Internal_Error;
             end case;
          else
             Put_Line_Err (Value_To_String (Rep));
@@ -4013,48 +4009,6 @@ package body Synth.Vhdl_Stmts is
    begin
       Exec_Failed_Assertion (Inst, Stmt);
    end Execute_Report_Statement;
-
-   --  Return True if EXPR can be evaluated with static values.
-   --  Does not need to be fully accurate, used for report/assert messages.
-   function Is_Static_Expr (Inst : Synth_Instance_Acc;
-                            Expr : Node) return Boolean is
-   begin
-      case Get_Kind (Expr) is
-         when Iir_Kinds_Dyadic_Operator =>
-            return Is_Static_Expr (Inst, Get_Left (Expr))
-              and then Is_Static_Expr (Inst, Get_Right (Expr));
-         when Iir_Kind_Image_Attribute =>
-            return Is_Static_Expr (Inst, Get_Parameter (Expr));
-         when Iir_Kind_Instance_Name_Attribute
-            | Iir_Kinds_Literal
-            | Iir_Kind_Enumeration_Literal =>
-            return True;
-         when Iir_Kind_Length_Array_Attribute =>
-            --  Attributes on types can be evaluated.
-            return True;
-         when Iir_Kind_Simple_Name =>
-            return Is_Static_Expr (Inst, Get_Named_Entity (Expr));
-         when others =>
-            Error_Kind ("is_static_expr", Expr);
-            return False;
-      end case;
-   end Is_Static_Expr;
-
-   procedure Synth_Dynamic_Report_Statement (Inst : Synth_Instance_Acc;
-                                             Stmt : Node;
-                                             Is_Cond : Boolean)
-   is
-      Rep_Expr : constant Node := Get_Report_Expression (Stmt);
-      Sev_Expr : constant Node := Get_Severity_Expression (Stmt);
-   begin
-      if not Is_Cond
-        and then Is_Static_Expr (Inst, Rep_Expr)
-        and then (Sev_Expr = Null_Node
-                    or else Is_Static_Expr (Inst, Sev_Expr))
-      then
-         Exec_Failed_Assertion (Inst, Stmt);
-      end if;
-   end Synth_Dynamic_Report_Statement;
 
    procedure Execute_Assertion_Statement (Inst : Synth_Instance_Acc;
                                           Stmt : Node)
@@ -4185,9 +4139,7 @@ package body Synth.Vhdl_Stmts is
                Execute_Report_Statement (C.Inst, Stmt);
             else
                --  Not executed.
-               --  Depends on the execution path: the report statement may
-               --  be conditionally executed.
-               Synth_Dynamic_Report_Statement (C.Inst, Stmt, True);
+               null;
             end if;
          when Iir_Kind_Assertion_Statement =>
             if not Is_Dyn then
@@ -4598,8 +4550,7 @@ package body Synth.Vhdl_Stmts is
 
             --  TODO: if EOS is present, then this is a live state.
 
-            --  Reverse order for final concatenation.
-            D_Num := Nbr_States - 1 - Get_State_Label (Get_Edge_Dest (E));
+            D_Num := Get_State_Label (Get_Edge_Dest (E));
             if D_Arr (D_Num) /= No_Net then
                Cond := Build_Dyadic (Ctxt, Id_Or, D_Arr (D_Num), Cond);
                Set_Location (Cond, Loc);
@@ -4613,16 +4564,16 @@ package body Synth.Vhdl_Stmts is
       end loop;
 
       --  Maybe there is no edge to the first state (common for restrict).
-      if D_Arr (Nbr_States - 1) = No_Net then
-         D_Arr (Nbr_States - 1) := Build_Const_UB32 (Ctxt, 0, 1);
-      end if;
-
-      --  Maybe there is no edge to the final state.
       if D_Arr (0) = No_Net then
          D_Arr (0) := Build_Const_UB32 (Ctxt, 0, 1);
       end if;
 
-      Concat_Array (Ctxt, D_Arr.all, Res);
+      --  Maybe there is no edge to the final state.
+      if D_Arr (Nbr_States - 1) = No_Net then
+         D_Arr (Nbr_States - 1) := Build_Const_UB32 (Ctxt, 0, 1);
+      end if;
+
+      Res := Build2_Concat (Ctxt, D_Arr.all, +Loc);
       Free_Net_Array (D_Arr);
 
       return Res;
@@ -4808,8 +4759,10 @@ package body Synth.Vhdl_Stmts is
       use PSL.NFAs;
       Ctxt : constant Context_Acc := Get_Build (Syn_Inst);
       NFA : constant PSL_NFA := Get_PSL_NFA (Stmt);
+      Loc : constant Location_Type := Get_Location (Stmt);
       Active : NFA_State;
       Next_States : Net;
+      Active_Bit : Net;
       Inst : Instance;
       Lab : Sname;
    begin
@@ -4828,7 +4781,7 @@ package body Synth.Vhdl_Stmts is
 
       Inst := Build_Assert
         (Ctxt, Lab, Synth_Psl_Not_Final (Syn_Inst, Stmt, Next_States));
-      Set_Location (Inst, Get_Location (Stmt));
+      Set_Location (Inst, Loc);
 
       --  Also add a cover gate to cover assertion activation.
       if Flags.Flag_Assert_Cover then
@@ -4837,11 +4790,11 @@ package body Synth.Vhdl_Stmts is
             if Lab /= No_Sname then
                Lab := New_Sname_User (Std_Names.Name_Cover, Lab);
             end if;
-            Inst := Build_Assert_Cover
-              (Get_Build (Syn_Inst), Lab,
-               Build_Extract_Bit (Get_Build (Syn_Inst), Next_States,
-                                  Uns32 (Get_State_Label (Active))));
-            Set_Location (Inst, Get_Location (Stmt));
+            Active_Bit := Build_Extract_Bit (Get_Build (Syn_Inst), Next_States,
+                                             Uns32 (Get_State_Label (Active)));
+            Set_Location (Active_Bit, Loc);
+            Inst := Build_Assert_Cover (Get_Build (Syn_Inst), Lab, Active_Bit);
+            Set_Location (Inst, Loc);
          end if;
       end if;
    end Synth_Psl_Assert_Directive;

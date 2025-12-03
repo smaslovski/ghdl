@@ -406,7 +406,7 @@ package body Elab.Vhdl_Expr is
                --  [...] and the value of the expression shall belong to the
                --  discrete range specified for the generate parameter.
                Param_Rng := Get_Subtype_Object (Cur_Inst, Get_Type (Param));
-               Idx := Synth_Expression_With_Type (Cur_Inst, Expr, Param_Rng);
+               Idx := Synth_Expression_With_Type (Loc_Inst, Expr, Param_Rng);
                if Idx = No_Valtyp then
                   return No_Valtyp;
                end if;
@@ -503,9 +503,11 @@ package body Elab.Vhdl_Expr is
             when Iir_Kind_Component_Declaration =>
                --  The implicit block for the component.
                null;
-            when Iir_Kind_Process_Statement
+            when Iir_Kinds_Process_Statement
               | Iir_Kind_Function_Body
               | Iir_Kind_Procedure_Body =>
+               null;
+            when Iir_Kind_For_Generate_Statement =>
                null;
             when Iir_Kind_Package_Declaration =>
                --  Check if it is within a concurrent region.

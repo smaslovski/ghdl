@@ -397,7 +397,8 @@ package body Netlists.Memories is
                Append (Concat, Indexes (I).Addr);
             end loop;
 
-            Build (Ctxt, Concat, Low_Addr);
+            Build (Ctxt, Concat,
+                   Get_Location (Get_Net_Parent (Addr)), Low_Addr);
          end;
       else
          declare
@@ -1487,7 +1488,7 @@ package body Netlists.Memories is
 
       --  Slice the output.
       N := Get_Output (Res, 1);
-      N := Build2_Extract (Ctxt, N, 0, W);
+      N := Build2_Extract (Ctxt, N, 0, W, Get_Location (Extr_Inst));
 
       if Dff_Inst /= Extr_Inst then
          Redirect_Inputs (Get_Output (Dff_Inst, 0), N);
@@ -2096,6 +2097,7 @@ package body Netlists.Memories is
    is
       Off : constant Uns32 := Get_Param_Uns32 (In_Inst, 0);
       Wd : constant Width := Get_Width (Get_Output (In_Inst, 0));
+      Loc : constant Location_Type := Get_Location (In_Inst);
       Idx : Int32;
       Len : Int32;
       Addr : Net;
@@ -2136,7 +2138,7 @@ package body Netlists.Memories is
          Tails (I) := Get_Output (Rd_Inst, 0);
          Outs (I) := Get_Output (Rd_Inst, 1);
       end loop;
-      Rd := Build2_Concat (Ctxt, Outs (Idx .. Idx + Len - 1));
+      Rd := Build2_Concat (Ctxt, Outs (Idx .. Idx + Len - 1), Loc);
       Redirect_Inputs (Get_Output (Last_Inst, 0), Rd);
       if Last_Inst /= In_Inst then
          Remove_Instance (Last_Inst);
@@ -2232,7 +2234,8 @@ package body Netlists.Memories is
                         Wr_Inst := Build_Mem_Wr_Sync
                           (Ctxt, Tails (I), Addr, No_Net, En,
                            Build2_Extract (Ctxt, Dat, Offs (I) - Offs (Idx),
-                                           Offs (I + 1) - Offs (I)));
+                                           Offs (I + 1) - Offs (I),
+                                           Get_Location (Sig)));
                         --  Keep instance to add clock.
                         N_Ports := N_Ports + 1;
                         Ports (N_Ports) := Wr_Inst;
