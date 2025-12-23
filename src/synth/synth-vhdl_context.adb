@@ -101,12 +101,6 @@ package body Synth.Vhdl_Context is
       Extra_Tables.Table (Get_Instance_Id (Inst)).Base := Base;
    end Set_Instance_Base;
 
-   procedure Set_Instance_Base (Inst : Synth_Instance_Acc;
-                                Base : Synth_Instance_Acc) is
-   begin
-      Set_Instance_Base (Inst, Get_Instance_Extra (Base).Base);
-   end Set_Instance_Base;
-
    procedure Free_Instance (Synth_Inst : in out Synth_Instance_Acc) is
    begin
       if Get_Instance_Id (Synth_Inst) = Extra_Tables.Last then
@@ -165,25 +159,6 @@ package body Synth.Vhdl_Context is
 
       return Base.Builder;
    end Get_Build;
-
-   procedure Create_Wire_Object (Syn_Inst : Synth_Instance_Acc;
-                                 Kind : Wire_Kind;
-                                 Obj : Node)
-   is
-      Obj_Type : constant Node := Get_Type (Obj);
-      Otyp : constant Type_Acc := Get_Subtype_Object (Syn_Inst, Obj_Type);
-      Val : Valtyp;
-      Wid : Wire_Id;
-   begin
-      if Kind = Wire_None then
-         Wid := No_Wire_Id;
-      else
-         Wid := Alloc_Wire (Kind, (Obj, Otyp));
-      end if;
-      Val := Create_Value_Wire (Wid, Otyp, Current_Pool);
-
-      Create_Object (Syn_Inst, Obj, Val);
-   end Create_Wire_Object;
 
    --  Set Is_0 to True iff VEC is 000...
    --  Set Is_X to True iff VEC is XXX...

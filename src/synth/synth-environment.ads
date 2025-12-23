@@ -121,7 +121,6 @@ package Synth.Environment is
    --  Set the gate for a wire.
    procedure Set_Wire_Gate (Wid : Wire_Id; Gate : Net);
    function Get_Wire_Gate (Wid : Wire_Id) return Net;
-   procedure Replace_Wire_Gate (Wid : Wire_Id; Gate : Net);
 
    --  The current value of WID.  For variables, this is the last assigned
    --  value.  For signals, this is the gate.
@@ -200,13 +199,6 @@ package Synth.Environment is
    function Get_Assign_Chain (Asgn : Seq_Assign) return Seq_Assign;
    function Get_Assign_Value (Ctxt : Builders.Context_Acc; Asgn : Seq_Assign)
                              return Net;
-
-   --  Return the value from the gate.
-   function Get_Gate_Value (Wid : Wire_Id) return Net;
-
-   --  Return the current assigned value.
-   function Get_Assigned_Value (Ctxt : Builders.Context_Acc; Wid : Wire_Id)
-                               return Net;
 
    --  For low-level phi merge.
    --  A sequential assignment is a linked list of partial assignment.

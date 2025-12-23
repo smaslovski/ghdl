@@ -22,6 +22,7 @@ with Elab.Memtype; use Elab.Memtype;
 
 with Synth.Errors; use Synth.Errors;
 with Synth.Ieee.Std_Logic_1164; use Synth.Ieee.Std_Logic_1164;
+with Synth.Ieee.Utils; use Synth.Ieee.Utils;
 
 package body Synth.Ieee.Numeric_Bit is
    type Table_1d is array (Bit) of Bit;
@@ -56,22 +57,6 @@ package body Synth.Ieee.Numeric_Bit is
 
    type Uns_To_01_Array is array (Uns64 range 0 .. 1) of Bit;
    Uns_To_01 : constant Uns_To_01_Array := (0 => '0', 1 => '1');
-
-   function Create_Res_Type (Otyp : Type_Acc; Len : Uns32) return Type_Acc is
-   begin
-      if Otyp.Abound.Len = Len
-        and then Otyp.Abound.Right = 0
-        and then Otyp.Abound.Dir = Dir_Downto
-        and then not Otyp.Is_Global
-      then
-         --  Try to reuse the same type as the parameter.
-         --  But the result type must be allocated on the expr_pool.
-         --  FIXME: is this code ever executed ?
-         pragma Assert (Otyp.Abound.Left = Int32 (Len) - 1);
-         return Otyp;
-      end if;
-      return Create_Vec_Type_By_Length (Len, Otyp.Arr_El);
-   end Create_Res_Type;
 
    procedure Fill (Res : Memtyp; V : Bit) is
    begin
@@ -336,6 +321,28 @@ package body Synth.Ieee.Numeric_Bit is
       return Res;
    end Compare_Sgn_Int;
 
+   function Bit_To_Vec1 (Val : Memtyp) return Memtyp
+   is
+      Res : Memtyp;
+   begin
+      Res.Typ := Create_Vec_Type_By_Length (1, Val.Typ);
+      Res := Create_Memory (Res.Typ);
+      Write_U8 (Res.Mem, Read_U8 (Val.Mem));
+      return Res;
+   end Bit_To_Vec1;
+
+   function Bit_To_Vec (Val : Memtyp; Vec : Memtyp) return Memtyp
+   is
+      Len : constant Uns32 := Vec.Typ.Abound.Len;
+      Res : Memtyp;
+   begin
+      pragma Assert (Len > 0);
+      Res := Create_Memory (Vec.Typ);
+      Fill (Res, '0');
+      Write_U8 (Res.Mem + Size_Type (Len - 1), Read_U8 (Val.Mem));
+      return Res;
+   end Bit_To_Vec;
+
    function Add_Vec_Vec (L, R : Memtyp; Signed : Boolean) return Memtyp
    is
       Llen : constant Uns32 := L.Typ.Abound.Len;
@@ -387,21 +394,6 @@ package body Synth.Ieee.Numeric_Bit is
       return Add_Vec_Vec (L, R, False);
    end Add_Uns_Uns;
 
-   function Log_To_Vec (Val : Memtyp; Vec : Memtyp) return Memtyp
-   is
-      Len : constant Uns32 := Vec.Typ.Abound.Len;
-      Res : Memtyp;
-   begin
-      if Len = 0 then
-         --  FIXME: is it an error ?
-         return Vec;
-      end if;
-      Res := Create_Memory (Vec.Typ);
-      Fill (Res, '0');
-      Write_U8 (Res.Mem + Size_Type (Len - 1), Read_U8 (Val.Mem));
-      return Res;
-   end Log_To_Vec;
-
    function Add_Sgn_Sgn (L, R : Memtyp) return Memtyp is
    begin
       return Add_Vec_Vec (L, R, True);
@@ -444,7 +436,7 @@ package body Synth.Ieee.Numeric_Bit is
 
    function Add_Uns_Nat (L : Memtyp; R : Uns64) return Memtyp is
    begin
-      return Add_Vec_Int (L, R, True);
+      return Add_Vec_Int (L, R, False);
    end Add_Uns_Nat;
 
    function Sub_Vec_Vec (L, R : Memtyp; Signed : Boolean) return Memtyp
@@ -542,7 +534,7 @@ package body Synth.Ieee.Numeric_Bit is
 
    function Sub_Uns_Nat (L : Memtyp; R : Uns64) return Memtyp is
    begin
-      return Sub_Vec_Int (L, R, True);
+      return Sub_Vec_Int (L, R, False);
    end Sub_Uns_Nat;
 
    function Sub_Int_Vec (L : Uns64;
@@ -594,12 +586,14 @@ package body Synth.Ieee.Numeric_Bit is
       Res           : Memtyp;
       Lb, Rb, Vb, Carry : Bit;
    begin
+      if Llen = 0 or Rlen = 0 then
+         return Null_Res (L.Typ);
+      end if;
+
       Res.Typ := Create_Res_Type (L.Typ, Len);
       Res := Create_Memory (Res.Typ);
-      if Llen = 0 or Rlen = 0 then
-         return Res;
-      end if;
       Fill (Res, '0');
+
       --  Shift and add L.
       for I in 1 .. Rlen loop
          Rb := Read_Bit (R.Mem, Rlen - I);
@@ -673,11 +667,12 @@ package body Synth.Ieee.Numeric_Bit is
       Res           : Memtyp;
       Lb, Rb, Vb, Carry : Bit;
    begin
+      if Llen = 0 or Rlen = 0 then
+         return Null_Res (L.Typ);
+      end if;
+
       Res.Typ := Create_Res_Type (L.Typ, Len);
       Res := Create_Memory (Res.Typ);
-      if Llen = 0 or Rlen = 0 then
-         return Res;
-      end if;
       Fill (Res, '0');
 
       --  Shift and add L, do not consider (yet) the sign bit of R.
@@ -1048,7 +1043,7 @@ package body Synth.Ieee.Numeric_Bit is
       end if;
 
       if Is_0 (R) then
-         Error_Msg_Synth (Inst, Loc, "NUMERIC_BIT.""/"": division by 0");
+         Report_Division_By_Zero (Inst, Loc, "NUMERIC_BIT.""/""");
          Fill (Quot, '0');
          return Quot;
       end if;
@@ -1102,7 +1097,7 @@ package body Synth.Ieee.Numeric_Bit is
       end if;
 
       if Is_0 (R) then
-         Error_Msg_Synth (Inst, Loc, "NUMERIC_BIT.""/"": division by 0");
+         Report_Division_By_Zero (Inst, Loc, "NUMERIC_BIT.""/""");
          Fill (Quot, '0');
          return Quot;
       end if;
@@ -1168,14 +1163,15 @@ package body Synth.Ieee.Numeric_Bit is
       Dlen  : constant Uns32 := R.Typ.Abound.Len;
       Rema  : Memtyp;
    begin
-      Rema.Typ := Create_Res_Type (R.Typ, Dlen);
-      Rema := Create_Memory (Rema.Typ);
       if Nlen = 0 or Dlen = 0 then
-         return Rema;
+         return Null_Res (L.Typ);
       end if;
 
+      Rema.Typ := Create_Res_Type (R.Typ, Dlen);
+      Rema := Create_Memory (Rema.Typ);
+
       if Is_0 (R) then
-         Error_Msg_Synth (Inst, Loc, "NUMERIC_BIT.""rem"": division by 0");
+         Report_Division_By_Zero (Inst, Loc, "NUMERIC_BIT.""rem""");
          Fill (Rema, '0');
          return Rema;
       end if;
@@ -1222,14 +1218,15 @@ package body Synth.Ieee.Numeric_Bit is
       Ru    : Memtyp;
       Neg   : Boolean;
    begin
-      Rema.Typ := Create_Res_Type (L.Typ, Dlen);
-      Rema := Create_Memory (Rema.Typ);
       if Nlen = 0 or Dlen = 0 then
-         return Rema;
+         return Null_Res (L.Typ);
       end if;
 
+      Rema.Typ := Create_Res_Type (L.Typ, Dlen);
+      Rema := Create_Memory (Rema.Typ);
+
       if Is_0 (R) then
-         Error_Msg_Synth (Inst, Loc, "NUMERIC_BIT.""rem"": division by 0");
+         Report_Division_By_Zero (Inst, Loc, "NUMERIC_BIT.""rem""");
          Fill (Rema, '0');
          return Rema;
       end if;
@@ -1298,14 +1295,15 @@ package body Synth.Ieee.Numeric_Bit is
       Ru    : Memtyp;
       L_Neg, R_Neg : Boolean;
    begin
-      Rema.Typ := Create_Res_Type (L.Typ, Dlen);
-      Rema := Create_Memory (Rema.Typ);
       if Nlen = 0 or Dlen = 0 then
-         return Rema;
+         return Null_Res (L.Typ);
       end if;
 
+      Rema.Typ := Create_Res_Type (L.Typ, Dlen);
+      Rema := Create_Memory (Rema.Typ);
+
       if Is_0 (R) then
-         Error_Msg_Synth (Inst, Loc, "NUMERIC_BIT.""rem"": division by 0");
+         Report_Division_By_Zero (Inst, Loc, "NUMERIC_BIT.""mod""");
          Fill (Rema, '0');
          return Rema;
       end if;

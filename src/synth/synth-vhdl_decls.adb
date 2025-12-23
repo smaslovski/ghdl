@@ -303,8 +303,7 @@ package body Synth.Vhdl_Decls is
                --  A net (--keep-hierarchy=no)
                Synth_Attribute_Inst (Inst, Attr_Decl, Val);
             end if;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Synth_Attribute_Port;
 
@@ -324,8 +323,7 @@ package body Synth.Vhdl_Decls is
          when Value_Net
             | Value_Const =>
             N := Get_Net (Get_Build (Syn_Inst), V);
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
       Inst := Get_Net_Parent (N);
 
@@ -354,7 +352,8 @@ package body Synth.Vhdl_Decls is
             if Get_Kind (Get_Parent (Obj)) = Iir_Kind_Entity_Declaration then
                Synth_Attribute_Port (Syn_Inst, Obj, Attr_Decl, Val);
             else
-               Synth_Attribute_Net (Syn_Inst, Obj, Attr_Decl, Val);
+               raise Internal_Error;  --  Is it possible ?
+               --  Synth_Attribute_Net (Syn_Inst, Obj, Attr_Decl, Val);
             end if;
          when Iir_Kind_Entity_Declaration =>
             declare
@@ -552,8 +551,8 @@ package body Synth.Vhdl_Decls is
             when Iir_Kind_Function_Body
               | Iir_Kind_Procedure_Body =>
                null;
-            when others =>
-               Vhdl.Errors.Error_Kind ("create_protected_object", Decl);
+            when others => Vhdl.Errors.Error_Kind ("create_protected_object",
+                                                   Decl);
          end case;
          if Is_Error (Obj_Inst) then
             Set_Error (Inst);
@@ -674,7 +673,9 @@ package body Synth.Vhdl_Decls is
          return;
       end if;
 
-      if Init.Val = null then
+      --  Variables are always initialized during elaboration.
+      pragma Assert (Init.Val /= null);
+      if False and then Init.Val = null then
          Mark_Expr_Pool (Marker);
          Init := Create_Value_Default (Init.Typ);
          Init := Unshare (Init, Instance_Pool);
@@ -731,7 +732,7 @@ package body Synth.Vhdl_Decls is
          Typ := Base.Typ;
       else
          Atype := Get_Declaration_Type (Decl);
-         Vhdl_Stmts.Synth_Assignment_Prefix (Syn_Inst, Name, Base, Typ, Off);
+         Vhdl_Stmts.Synth_Object_Name (Syn_Inst, Name, Base, Typ, Off);
       end if;
 
       --  In case of error (in particular invalid external names)
@@ -803,8 +804,7 @@ package body Synth.Vhdl_Decls is
                                 A_Obj => Res.Val,
                                 A_Typ => Res.Typ,
                                 A_Off => No_Value_Offsets);
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
 
          --  Subtype conversion.
@@ -885,6 +885,7 @@ package body Synth.Vhdl_Decls is
       Release_Expr_Pool (Marker);
    end Synth_Concurrent_Object_Alias_Declaration;
 
+   --  For declarations of subprograms or processes.
    procedure Synth_Declaration (Syn_Inst : Synth_Instance_Acc;
                                 Decl : Node;
                                 Is_Subprg : Boolean;
@@ -897,22 +898,8 @@ package body Synth.Vhdl_Decls is
       case Get_Kind (Decl) is
          when Iir_Kind_Variable_Declaration =>
             Synth_Variable_Declaration (Syn_Inst, Decl, Is_Subprg);
-         when Iir_Kind_Interface_Variable_Declaration =>
-            --  Ignore default value.
-            declare
-               Val : Valtyp;
-               Obj_Typ : Type_Acc;
-            begin
-               Obj_Typ := Get_Subtype_Object (Syn_Inst, Get_Type (Decl));
-               Val := Create_Var_Wire
-                 (Syn_Inst, Decl, Wire_Variable, (Obj_Typ, null));
-               Create_Object (Syn_Inst, Decl, Val);
-            end;
          when Iir_Kind_Constant_Declaration =>
             Synth_Constant_Declaration (Syn_Inst, Decl, Is_Subprg, Last_Type);
-         when Iir_Kind_Signal_Declaration =>
-            pragma Assert (not Is_Subprg);
-            Synth_Signal_Declaration (Syn_Inst, Decl);
          when Iir_Kind_Object_Alias_Declaration =>
             Synth_Object_Alias_Declaration (Syn_Inst, Decl);
          when Iir_Kind_Procedure_Declaration
@@ -1022,8 +1009,7 @@ package body Synth.Vhdl_Decls is
                Create_Object (Syn_Inst, Decl, Val);
             end;
 
-         when others =>
-            Vhdl.Errors.Error_Kind ("synth_declaration", Decl);
+         when others => Vhdl.Errors.Error_Kind ("synth_declaration", Decl);
       end case;
 
       pragma Assert (Areapools.Is_At_Mark (Expr_Pool, Marker));
@@ -1094,9 +1080,7 @@ package body Synth.Vhdl_Decls is
             | Id_Iinout =>
             Drv := Get_Input_Net (Gate, 0);
             Def_Val := Get_Input_Net (Gate, 1);
-         when others =>
-            --  Todo: output ?
-            raise Internal_Error;
+         when others => raise Internal_Error; --  Todo: output ?
       end case;
       if Drv = No_Net then
          --  Undriven signals.
@@ -1131,6 +1115,9 @@ package body Synth.Vhdl_Decls is
            | Iir_Kind_Interface_Variable_Declaration =>
             if not Get_Instance_Const (Syn_Inst) then
                Finalize_Signal (Syn_Inst, Decl);
+            else
+               --  TODO: finalize protected object
+               null;
             end if;
          when Iir_Kind_Constant_Declaration =>
             null;
@@ -1211,8 +1198,7 @@ package body Synth.Vhdl_Decls is
             null;
          when Iir_Kind_Suspend_State_Declaration =>
             null;
-         when others =>
-            Vhdl.Errors.Error_Kind ("finalize_declaration", Decl);
+         when others => Vhdl.Errors.Error_Kind ("finalize_declaration", Decl);
       end case;
    end Finalize_Declaration;
 
@@ -1242,8 +1228,11 @@ package body Synth.Vhdl_Decls is
          when Iir_Kind_Constant_Declaration
            | Iir_Kind_Function_Declaration
            | Iir_Kind_Function_Body
+           | Iir_Kind_Function_Instantiation_Declaration
            | Iir_Kind_Procedure_Declaration
            | Iir_Kind_Procedure_Body
+           | Iir_Kind_Procedure_Instantiation_Declaration
+           | Iir_Kind_Subprogram_Instantiation_Body
            | Iir_Kind_Type_Declaration
            | Iir_Kind_Protected_Type_Body
            | Iir_Kind_Anonymous_Type_Declaration
@@ -1266,8 +1255,8 @@ package body Synth.Vhdl_Decls is
          when Iir_Kind_Attribute_Implicit_Declaration =>
             --  Error will be printed when the attribute is used.
             null;
-         when others =>
-            Vhdl.Errors.Error_Kind ("synth_concurrent_declaration", Decl);
+         when others => Vhdl.Errors.Error_Kind ("synth_concurrent_declaration",
+                                                Decl);
       end case;
       pragma Assert (Is_Expr_Pool_Empty);
    end Synth_Concurrent_Declaration;

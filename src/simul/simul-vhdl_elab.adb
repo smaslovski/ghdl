@@ -91,6 +91,24 @@ package body Simul.Vhdl_Elab is
       end case;
    end Convert_Type_Width;
 
+   function Get_Concrete_Type (Inst : Synth_Instance_Acc;
+                               Atype : Node) return Node
+   is
+      Res : Node;
+   begin
+      Res := Atype;
+
+      while Get_Kind (Res) = Iir_Kind_Interface_Type_Definition loop
+         declare
+            Ntyp : Type_Acc;
+         begin
+            Get_Interface_Type (Inst, Res, Ntyp, Res);
+            pragma Unreferenced (Ntyp);
+         end;
+      end loop;
+      return Res;
+   end Get_Concrete_Type;
+
    --  For each scalar element, set Vec (off).Total to 1 if the signal is
    --  resolved.
    procedure Mark_Resolved_Signals (Inst : Synth_Instance_Acc;
@@ -103,16 +121,16 @@ package body Simul.Vhdl_Elab is
       Sig_Type : Node;
       Sub_Resolved : Boolean;
    begin
-      if Get_Kind (Sig_Type1) = Iir_Kind_Interface_Type_Definition then
+      Sig_Type := Get_Concrete_Type (Inst, Sig_Type1);
+
+      while Get_Kind (Sig_Type) = Iir_Kind_Interface_Type_Definition loop
          declare
             Ntyp : Type_Acc;
          begin
-            Get_Interface_Type (Inst, Sig_Type1, Ntyp, Sig_Type);
+            Get_Interface_Type (Inst, Sig_Type, Ntyp, Sig_Type);
             pragma Unreferenced (Ntyp);
          end;
-      else
-         Sig_Type := Sig_Type1;
-      end if;
+      end loop;
 
       if not Already_Resolved
         and then Get_Kind (Sig_Type) in Iir_Kinds_Subtype_Definition
@@ -233,7 +251,7 @@ package body Simul.Vhdl_Elab is
    begin
       Mark_Expr_Pool (Marker);
 
-      Synth.Vhdl_Stmts.Synth_Assignment_Prefix (Inst, Name, Base, Typ, Off);
+      Synth.Vhdl_Stmts.Synth_Object_Name (Inst, Name, Base, Typ, Off);
       if Base = No_Valtyp then
          Res := (Base => No_Signal_Index,
                  Typ => null,
@@ -338,7 +356,7 @@ package body Simul.Vhdl_Elab is
          Mark_Expr_Pool (Marker);
          Instance_Pool := Global_Pool'Access;
 
-         Synth.Vhdl_Stmts.Synth_Assignment_Prefix (Inst, Name, Base, Typ, Off);
+         Synth.Vhdl_Stmts.Synth_Object_Name (Inst, Name, Base, Typ, Off);
          V.Val.A_Off := Off;
          pragma Assert (Base.Val = V.Val.A_Obj);
          pragma Unreferenced (Typ);
@@ -772,12 +790,12 @@ package body Simul.Vhdl_Elab is
       if Formal = Null_Iir then
          Formal := Inter;
       end if;
-      Synth_Assignment_Prefix (Port_Inst, Formal, Formal_Base, Typ, Off);
+      Synth_Object_Name (Port_Inst, Formal, Formal_Base, Typ, Off);
       Typ := Unshare (Typ, Global_Pool'Access);
       Formal_Sig := Formal_Base.Val.S;
       Formal_Ep := (Formal_Sig, Off, Typ);
 
-      Synth_Assignment_Prefix
+      Synth_Object_Name
         (Assoc_Inst, Get_Actual (Assoc), Actual_Base, Typ, Off);
       Typ := Unshare (Typ, Global_Pool'Access);
       Actual_Sig := Actual_Base.Val.S;

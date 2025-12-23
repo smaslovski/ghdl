@@ -108,11 +108,8 @@ package body Synth.Vhdl_Oper is
       Zx : Uns32;
       N : Net;
    begin
-      if Is_Static (Expr.Val) then
-         return Create_Value_Discrete
-           (Boolean'Pos (Read_Discrete (Cst) = Read_Discrete (Expr)),
-            Boolean_Type);
-      end if;
+      --  EXPR cannot be static, otherwise vhdl_eval would have been used.
+      pragma Assert (not Is_Static (Expr.Val));
 
       To_Logic (Ghdl_U8 (Read_Discrete (Cst)), Cst.Typ, Val, Zx);
       if Zx /= 0 then
@@ -446,9 +443,8 @@ package body Synth.Vhdl_Oper is
       L_Net : Net;
       Res : Net;
    begin
-      if Len = 0 then
-         return Create_Value_Int (-1, Res_Typ);
-      end if;
+      --  If len = 0, this is a static operation.
+      pragma Assert (Len > 0);
 
       --  The intermediate result is computed using the least number of bits,
       --  which must represent all positive values in the bounds using a
@@ -900,17 +896,9 @@ package body Synth.Vhdl_Oper is
          Set_Location (Edge, Expr);
          return Create_Value_Net (Edge, Res_Typ);
       end Synth_Negedge;
-
-      function Error_Unhandled return Valtyp is
-      begin
-         Error_Msg_Synth
-           (Get_Caller_Instance (Syn_Inst), Expr,
-            "unhandled dyn operation: "
-              & Iir_Predefined_Functions'Image (Def));
-         return No_Valtyp;
-      end Error_Unhandled;
    begin
       case Def is
+         --  GCOV_EXCL_START (not called)
          when Iir_Predefined_Error
             | Iir_Predefined_None =>
             --  Should not happen.
@@ -918,7 +906,42 @@ package body Synth.Vhdl_Oper is
 
          when Iir_Predefined_Boolean_Rising_Edge
            | Iir_Predefined_Boolean_Falling_Edge =>
-            return Error_Unhandled;
+            raise Internal_Error;
+
+         when Iir_Predefined_Bit_And
+           | Iir_Predefined_Boolean_And =>
+            --  Short circuit.
+            raise Internal_Error;
+
+         when Iir_Predefined_Now_Function
+            | Iir_Predefined_Real_Now_Function
+            | Iir_Predefined_Frequency_Function
+            | Iir_Predefined_Std_Env_Resolution_Limit
+            | Iir_Predefined_Std_Env_Stop
+            | Iir_Predefined_Std_Env_Stop_Status
+            | Iir_Predefined_Std_Env_Finish
+            | Iir_Predefined_Std_Env_Finish_Status
+            | Iir_Predefined_Read
+            | Iir_Predefined_Write
+            | Iir_Predefined_Read_Length
+            | Iir_Predefined_Flush
+            | Iir_Predefined_File_Open_Status
+            | Iir_Predefined_File_Open
+            | Iir_Predefined_File_Close
+            | Iir_Predefined_Foreign_Untruncated_Text_Read
+            | Iir_Predefined_Foreign_Textio_Read_Real
+            | Iir_Predefined_Foreign_Textio_Write_Real =>
+            --  Procedures or functions without arguments.
+            raise Internal_Error;
+
+         when Iir_Predefined_Access_Equality
+            | Iir_Predefined_Access_Inequality
+            | Iir_Predefined_Deallocate =>
+            Error_Msg_Synth
+              (Syn_Inst, Expr, "non-constant access operations not supported");
+            return No_Valtyp;
+         --  GCOV_EXCL_STOP
+
          when Iir_Predefined_Bit_Rising_Edge =>
             if Hook_Bit_Rising_Edge /= null then
                return Create_Value_Memtyp
@@ -949,7 +972,8 @@ package body Synth.Vhdl_Oper is
          when Iir_Predefined_Boolean_Not
            | Iir_Predefined_Bit_Not =>
             return Synth_Bit_Monadic (Id_Not);
-         when Iir_Predefined_Ieee_1164_Vector_Not
+         when Iir_Predefined_TF_Array_Not
+            | Iir_Predefined_Ieee_1164_Vector_Not
             | Iir_Predefined_Ieee_Numeric_Std_Not_Uns
             | Iir_Predefined_Ieee_Numeric_Std_Not_Sgn =>
             return Synth_Vec_Monadic (Id_Not);
@@ -1017,10 +1041,6 @@ package body Synth.Vhdl_Oper is
                return Create_Value_Net (N, L.Typ);
             end;
 
-         when Iir_Predefined_Bit_And
-           | Iir_Predefined_Boolean_And =>
-            --  Short circuit.
-            raise Internal_Error;
          when Iir_Predefined_Ieee_1164_Scalar_And =>
             return Synth_Bit_Dyadic (Id_And);
          when Iir_Predefined_Bit_Xor
@@ -1194,7 +1214,7 @@ package body Synth.Vhdl_Oper is
                   Error_Msg_Synth
                     (Syn_Inst, Expr,
                      "operands of ?= don't have the same size");
-                  return Create_Value_Discrete (0, Bit_Type);
+                  return Create_Value_Discrete (0, Logic_Type);
                end if;
 
                if Is_Static (L.Val) then
@@ -1223,7 +1243,7 @@ package body Synth.Vhdl_Oper is
                if L.Typ.W /= R.Typ.W then
                   Error_Msg_Synth (Syn_Inst, Expr,
                                    "operands of ?/= don't have the same size");
-                  return Create_Value_Discrete (1, Bit_Type);
+                  return Create_Value_Discrete (1, Logic_Type);
                end if;
 
                if Is_Static (L.Val) then
@@ -1269,7 +1289,10 @@ package body Synth.Vhdl_Oper is
                Result_Typ : Type_Acc;
                N : Net;
             begin
-               Check_Matching_Bounds (Syn_Inst, Le_Typ, R.Typ, Expr);
+               if not Check_Matching_Bounds (Syn_Inst, Le_Typ, R.Typ, Expr)
+               then
+                  return No_Valtyp;
+               end if;
                N := Build2_Concat2 (Ctxt, Ln, Get_Net (Ctxt, R));
                Set_Location (N, Expr);
                Bnd := Create_Bounds_From_Length
@@ -1292,7 +1315,10 @@ package body Synth.Vhdl_Oper is
                Result_Typ : Type_Acc;
                N : Net;
             begin
-               Check_Matching_Bounds (Syn_Inst, L.Typ, Re_Typ, Expr);
+               if not Check_Matching_Bounds (Syn_Inst, L.Typ, Re_Typ, Expr)
+               then
+                  return No_Valtyp;
+               end if;
                N := Build2_Concat2 (Ctxt, Get_Net (Ctxt, L), Rn);
                Set_Location (N, Expr);
                Bnd := Create_Bounds_From_Length
@@ -1313,7 +1339,9 @@ package body Synth.Vhdl_Oper is
                Bnd : Bound_Type;
                Result_Typ : Type_Acc;
             begin
-               Check_Matching_Bounds (Syn_Inst, L.Typ, R.Typ, Expr);
+               if not Check_Matching_Bounds (Syn_Inst, L.Typ, R.Typ, Expr) then
+                  return No_Valtyp;
+               end if;
                N := Build2_Concat2
                  (Ctxt, Get_Net (Ctxt, L), Get_Net (Ctxt, R));
                Set_Location (N, Expr);
@@ -1336,7 +1364,10 @@ package body Synth.Vhdl_Oper is
                Result_Typ : Type_Acc;
                N : Net;
             begin
-               Check_Matching_Bounds (Syn_Inst, Le_Typ, Re_Typ, Expr);
+               if not Check_Matching_Bounds (Syn_Inst, Le_Typ, Re_Typ, Expr)
+               then
+                  return No_Valtyp;
+               end if;
                N := Build2_Concat2 (Ctxt, Ln, Rn);
                Set_Location (N, Expr);
                Bnd := Create_Bounds_From_Length
@@ -1445,13 +1476,6 @@ package body Synth.Vhdl_Oper is
                "non-constant floating point operation not supported");
             return No_Valtyp;
 
-         when Iir_Predefined_Access_Equality
-            | Iir_Predefined_Access_Inequality
-            | Iir_Predefined_Deallocate =>
-            Error_Msg_Synth
-              (Syn_Inst, Expr, "non-constant access operations not supported");
-            return No_Valtyp;
-
          when Iir_Predefined_Enum_To_String
             | Iir_Predefined_Integer_To_String
             | Iir_Predefined_Floating_To_String
@@ -1461,28 +1485,6 @@ package body Synth.Vhdl_Oper is
             | Iir_Predefined_Bit_Vector_To_Ostring =>
             Error_Msg_Synth
               (Syn_Inst, Expr, "to_string is not supported");
-            return No_Valtyp;
-
-         when Iir_Predefined_Now_Function
-            | Iir_Predefined_Real_Now_Function
-            | Iir_Predefined_Frequency_Function
-            | Iir_Predefined_Std_Env_Resolution_Limit
-            | Iir_Predefined_Std_Env_Stop
-            | Iir_Predefined_Std_Env_Stop_Status
-            | Iir_Predefined_Std_Env_Finish
-            | Iir_Predefined_Std_Env_Finish_Status
-            | Iir_Predefined_Read
-            | Iir_Predefined_Write
-            | Iir_Predefined_Read_Length
-            | Iir_Predefined_Flush
-            | Iir_Predefined_File_Open_Status
-            | Iir_Predefined_File_Open
-            | Iir_Predefined_File_Close
-            | Iir_Predefined_Foreign_Untruncated_Text_Read
-            | Iir_Predefined_Foreign_Textio_Read_Real
-            | Iir_Predefined_Foreign_Textio_Write_Real =>
-            Error_Msg_Synth
-              (Syn_Inst, Expr, "call to %i is not supported", (1 => +Imp));
             return No_Valtyp;
 
          when Iir_Predefined_Ieee_Numeric_Std_Add_Uns_Uns
@@ -2022,9 +2024,6 @@ package body Synth.Vhdl_Oper is
                Res := Elab.Vhdl_Files.Endfile (Syn_Inst, L.Val.File, Expr);
                return Create_Value_Memtyp
                  (Create_Memory_U8 (Boolean'Pos (Res), Boolean_Type));
-            exception
-               when Elab.Vhdl_Files.File_Execution_Error =>
-                  return No_Valtyp;
             end;
 
          when Iir_Predefined_Integer_Minimum =>
@@ -2254,8 +2253,14 @@ package body Synth.Vhdl_Oper is
             | Iir_Predefined_Ieee_Numeric_Std_Find_Rightmost_Uns =>
             return Synth_Find_Bit (Syn_Inst, L, R, Res_Typ, False, Expr);
 
+         --  GCOV_EXCL_START (not called)
          when others =>
-            return Error_Unhandled;
+            Error_Msg_Synth
+              (Get_Caller_Instance (Syn_Inst), Expr,
+              "unhandled dyn operation: "
+              & Iir_Predefined_Functions'Image (Def));
+            return No_Valtyp;
+         --  GCOV_EXCL_STOP
       end case;
    end Synth_Dynamic_Predefined_Call;
 
@@ -2388,7 +2393,9 @@ package body Synth.Vhdl_Oper is
            (Syn_Inst, Get_Value_Memtyp (Operand), Null_Memtyp, null, Expr);
          if Res = Null_Memtyp then
             --  In case of serious error (function not handled)
+            --  GCOV_EXCL_START (never called)
             return No_Valtyp;
+            --  GCOV_EXCL_STOP
          end if;
          return Create_Value_Memtyp (Res);
       else

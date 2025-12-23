@@ -151,7 +151,7 @@ package body Elab.Vhdl_Insts is
                            Formal : constant Node := Get_Formal (Assoc);
                            Dyn : Dyn_Name;
                         begin
-                           Synth_Assignment_Prefix
+                           Synth_Object_Name
                              (Syn_Inst, Sub_Inst, Formal,
                               Formal_Base, Formal_Typ, Formal_Offs, Dyn);
                            pragma Assert (Dyn = No_Dyn_Name);
@@ -163,8 +163,7 @@ package body Elab.Vhdl_Insts is
                      Val.Typ := Synth_Subtype_Indication
                        (Syn_Inst, Get_Actual_Type (Assoc));
                      Val := Create_Value_Memory (Val.Typ, Expr_Pool'Access);
-                  when others =>
-                     raise Internal_Error;
+                  when others => raise Internal_Error;
                end case;
 
                if Get_Whole_Association_Flag (Assoc) then
@@ -252,8 +251,7 @@ package body Elab.Vhdl_Insts is
                         Act := Get_Open_Actual (Assoc);
                      when Iir_Kind_Association_Element_Subprogram =>
                         Act := Get_Actual (Assoc);
-                     when others =>
-                        raise Internal_Error;
+                     when others => raise Internal_Error;
                   end case;
                   Act := Strip_Denoting_Name (Act);
                   Create_Interface_Subprg (Sub_Inst, Inter, Act);
@@ -441,8 +439,7 @@ package body Elab.Vhdl_Insts is
                   null;
                when Iir_Kinds_Verification_Unit =>
                   null;
-               when Iir_Kind_Foreign_Module =>
-                  raise Internal_Error;
+               when Iir_Kind_Foreign_Module => raise Internal_Error;
             end case;
          end if;
          Next (Dep_It);
@@ -503,13 +500,11 @@ package body Elab.Vhdl_Insts is
                      when Iir_Kind_Block_Statement =>
                         Set_Block_Block_Configuration (Sub_Blk, Item);
                         Count := Count + 1;
-                     when others =>
-                        Vhdl.Errors.Error_Kind
-                          ("apply_block_configuration(blk)", Sub_Blk);
+                     when others => Error_Kind ("apply_block_config(blk)",
+                                                Sub_Blk);
                   end case;
                end;
-            when others =>
-               Vhdl.Errors.Error_Kind ("apply_block_configuration", Item);
+            when others => Error_Kind ("apply_block_configuration", Item);
          end case;
          Item := Get_Chain (Item);
       end loop;
@@ -646,8 +641,7 @@ package body Elab.Vhdl_Insts is
                   return Res;
                end if;
                raise Internal_Error;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
       end Get_Name_Suffix_1;
 
@@ -731,8 +725,7 @@ package body Elab.Vhdl_Insts is
                end if;
                return Create_Record_Type (Typ, Els);
             end;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Elab_Individual_Typ;
 
@@ -843,7 +836,7 @@ package body Elab.Vhdl_Insts is
          begin
             Mark_Expr_Pool (Marker);
 
-            Synth_Assignment_Prefix
+            Synth_Object_Name
               (Syn_Inst, Actual, Actual_Base, Actual_Typ, Actual_Offs);
             case Inter_Typ.Kind is
                when Type_All_Discrete =>
@@ -967,8 +960,7 @@ package body Elab.Vhdl_Insts is
                | Iir_Kind_Concurrent_Procedure_Call_Statement
                | Iir_Kind_Component_Instantiation_Statement =>
                Elab_Concurrent_Statement (Unit_Inst, Item, Cfgs);
-            when others =>
-               Error_Kind ("elab_verification_unit", Item);
+            when others => Error_Kind ("elab_verification_unit", Item);
          end case;
          Item := Get_Chain (Item);
       end loop;
@@ -1434,12 +1426,10 @@ package body Elab.Vhdl_Insts is
         (Syn_Inst, Stmt, Ent, Arch, Config);
    end Elab_Design_Instantiation_Statement;
 
-   function Elab_Top_Unit (Config : Node) return Synth_Instance_Acc
-   is
-      Arch : Node;
-      Entity : Node;
-      Inter : Node;
-      Top_Inst : Synth_Instance_Acc;
+   procedure Elab_Top_Init (Config : Node;
+                            Entity : out Node;
+                            Arch : out Node;
+                            Top_Inst : out Synth_Instance_Acc) is
    begin
       Arch := Get_Named_Entity
         (Get_Block_Specification (Get_Block_Configuration (Config)));
@@ -1473,36 +1463,15 @@ package body Elab.Vhdl_Insts is
       Elab_Configuration_Declaration (Root_Instance, Config);
 
       pragma Assert (Is_Expr_Pool_Empty);
+   end Elab_Top_Init;
 
-      --  Compute generics.
-      Inter := Get_Generic_Chain (Entity);
-      while Is_Valid (Inter) loop
-         declare
-            Em : Mark_Type;
-            Val : Valtyp;
-            Inter_Typ : Type_Acc;
-            Defval : Node;
-         begin
-            Mark_Expr_Pool (Em);
-            Inter_Typ := Elab_Declaration_Type (Top_Inst, Inter);
-            Defval := Get_Default_Value (Inter);
-            if Defval /= Null_Node then
-               Val := Synth_Expression_With_Type (Top_Inst, Defval, Inter_Typ);
-            else
-               --  Only for simulation, expect override.
-               Val := Create_Value_Default (Inter_Typ);
-            end if;
-            if Val /= No_Valtyp then
-               pragma Assert (Is_Static (Val.Val));
-               Val := Unshare (Val, Instance_Pool);
-               Val.Typ := Unshare_Type_Instance (Val.Typ, Inter_Typ);
-               Create_Object (Top_Inst, Inter, Val);
-            end if;
-            Release_Expr_Pool (Em);
-         end;
-         Inter := Get_Chain (Inter);
-      end loop;
-
+   procedure Elab_Top_Finish (Config : Node;
+                              Entity : Node;
+                              Arch : Node;
+                              Top_Inst : Synth_Instance_Acc)
+   is
+      Inter : Node;
+   begin
       pragma Assert (Is_Expr_Pool_Empty);
 
       --  Elaborate port types.
@@ -1585,6 +1554,49 @@ package body Elab.Vhdl_Insts is
             end if;
          end;
       end loop;
+   end Elab_Top_Finish;
+
+   function Elab_Top_Unit (Config : Node) return Synth_Instance_Acc
+   is
+      Arch : Node;
+      Entity : Node;
+      Inter : Node;
+      Top_Inst : Synth_Instance_Acc;
+   begin
+      Elab_Top_Init (Config, Entity, Arch, Top_Inst);
+
+      --  Compute generics.
+      Inter := Get_Generic_Chain (Entity);
+      while Is_Valid (Inter) loop
+         declare
+            Em : Mark_Type;
+            Val : Valtyp;
+            Inter_Typ : Type_Acc;
+            Defval : Node;
+         begin
+            Mark_Expr_Pool (Em);
+            Inter_Typ := Elab_Declaration_Type (Top_Inst, Inter);
+            Defval := Get_Default_Value (Inter);
+            if Defval /= Null_Node then
+               Val := Synth_Expression_With_Type (Top_Inst, Defval, Inter_Typ);
+            else
+               --  Only for simulation, expect override.
+               Val := Create_Value_Default (Inter_Typ);
+            end if;
+            if Val /= No_Valtyp then
+               pragma Assert (Is_Static (Val.Val));
+               Val := Unshare (Val, Instance_Pool);
+               Val.Typ := Unshare_Type_Instance (Val.Typ, Inter_Typ);
+               Create_Object (Top_Inst, Inter, Val);
+            end if;
+            Release_Expr_Pool (Em);
+         end;
+         Inter := Get_Chain (Inter);
+      end loop;
+
+      pragma Assert (Is_Expr_Pool_Empty);
+
+      Elab_Top_Finish (Config, Entity, Arch, Top_Inst);
 
       return Top_Inst;
 

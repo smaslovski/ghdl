@@ -33,6 +33,20 @@ namespace GhdlSynth {
     return res; \
   }
 
+#define GHDLSYNTH_ADA_WRAPPER_WD(NAME, RESTYPE, ARGTYPE)	\
+  extern "C" unsigned int GHDLSYNTH_ADA_PREFIX(NAME) (unsigned int);\
+  inline RESTYPE NAME(ARGTYPE arg) {	\
+    RESTYPE res; \
+    res.id = GHDLSYNTH_ADA_PREFIX(NAME) (arg);	\
+    return res; \
+  }
+
+#define GHDLSYNTH_ADA_WRAPPER_VWDD(NAME, ARGTYPE1, ARGTYPE2, ARGTYPE3)	\
+  extern "C" void GHDLSYNTH_ADA_PREFIX(NAME) (unsigned int, ARGTYPE2, ARGTYPE3);	\
+  inline void NAME(ARGTYPE1 arg1, ARGTYPE2 arg2, ARGTYPE3 arg3) {	\
+    GHDLSYNTH_ADA_PREFIX(NAME) (arg1.id, arg2, arg3);			\
+  }
+
 #define GHDLSYNTH_ADA_WRAPPER_WWD(NAME, RESTYPE, ARGTYPE1, ARGTYPE2)	\
   extern "C" unsigned int GHDLSYNTH_ADA_PREFIX(NAME) (unsigned int, ARGTYPE2);\
   inline RESTYPE NAME(ARGTYPE1 arg1, ARGTYPE2 arg2) {	\
@@ -128,6 +142,9 @@ namespace GhdlSynth {
   GHDLSYNTH_ADA_WRAPPER_WWD(get_param_pval, Pval, Instance, Param_Idx);
   GHDLSYNTH_ADA_WRAPPER_DW(get_pval_length, unsigned int, Pval);
   GHDLSYNTH_ADA_WRAPPER_DWD(read_pval, struct logic_32, Pval, unsigned int);
+  GHDLSYNTH_ADA_WRAPPER_VWDD(write_pval, Pval, unsigned int, struct logic_32);
+  GHDLSYNTH_ADA_WRAPPER_WD(create_pval4, Pval, unsigned int);
+  GHDLSYNTH_ADA_WRAPPER_WD(create_pval2, Pval, unsigned int);
 
   struct Input { unsigned int id; };
   GHDLSYNTH_ADA_WRAPPER_WWD(get_input, Input, Instance, Port_Idx);
@@ -171,6 +188,15 @@ namespace GhdlSynth {
     return res;
   }
 
+  //  Handle options and import files from ARGC/ARGV.
+  //  Call CB (with ARG) for each entity found in the given files.
+  extern "C" int libghdl_synth__ghdl_synth_read(int init,
+						int argc, const char **argv,
+						void (*cb)(unsigned int raw_id,
+							   unsigned int node,
+							   void *arg),
+						void *arg);
+
   //  Disp ghdl version.
   extern "C" void ghdlmain__disp_ghdl_version (void);
 
@@ -182,4 +208,22 @@ namespace GhdlSynth {
 
   // More initialization for synthesis.
   extern "C" void ghdlsynth__init_for_ghdl_synth (void);
+
+  struct Pval_Cstring_tuple {
+    const char *str;
+    struct Pval val;
+  };
+
+  extern "C" unsigned int libghdl_synth__ghdl_synth_with_params(unsigned node,
+								struct Pval_Cstring_tuple *params,
+								unsigned nparams);
+
+  inline Module ghdl_synth_with_params(unsigned node,
+				       struct Pval_Cstring_tuple *params,
+				       unsigned nparams) {
+    Module res;
+    res.id = libghdl_synth__ghdl_synth_with_params(node, params, nparams);
+    return res;
+  }
+
 };

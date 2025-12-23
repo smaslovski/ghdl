@@ -32,7 +32,7 @@ package Synth.Vhdl_Stmts is
      (Inst : Synth_Instance_Acc;
       Stmt : Node;
       Severity : Natural;
-      Msg : Valtyp);
+      Msg : String_Acc);
 
    --  Procedure to call for report/assertion message.
    Assertion_Report_Handler : Assertion_Report_Handler_Acc;
@@ -77,20 +77,20 @@ package Synth.Vhdl_Stmts is
    --  DEST_TYP is the type of the result.
    --  DEST_OFF is the offset, within DEST_DYN.
    --  DEST_DYN is set (Voff field set) when there is a non-static index.
-   procedure Synth_Assignment_Prefix (Syn_Inst : Synth_Instance_Acc;
-                                      Pfx_Inst : Synth_Instance_Acc;
-                                      Pfx : Node;
-                                      Dest_Base : out Valtyp;
-                                      Dest_Typ : out Type_Acc;
-                                      Dest_Off : out Value_Offsets;
-                                      Dest_Dyn : out Dyn_Name);
+   procedure Synth_Object_Name (Syn_Inst : Synth_Instance_Acc;
+                                Pfx_Inst : Synth_Instance_Acc;
+                                Pfx : Node;
+                                Dest_Base : out Valtyp;
+                                Dest_Typ : out Type_Acc;
+                                Dest_Off : out Value_Offsets;
+                                Dest_Dyn : out Dyn_Name);
 
    --  Simplified version.  No dynamic offset expected.
-   procedure Synth_Assignment_Prefix (Syn_Inst : Synth_Instance_Acc;
-                                      Pfx : Node;
-                                      Dest_Base : out Valtyp;
-                                      Dest_Typ : out Type_Acc;
-                                      Dest_Off : out Value_Offsets);
+   procedure Synth_Object_Name (Syn_Inst : Synth_Instance_Acc;
+                                Pfx : Node;
+                                Dest_Base : out Valtyp;
+                                Dest_Typ : out Type_Acc;
+                                Dest_Off : out Value_Offsets);
 
    --  Likewise but for a formal name.
    procedure Synth_Individual_Formal (Syn_Inst : Synth_Instance_Acc;
@@ -135,8 +135,15 @@ package Synth.Vhdl_Stmts is
 
    procedure Execute_Report_Statement (Inst : Synth_Instance_Acc;
                                        Stmt : Node);
-   procedure Exec_Failed_Assertion (Syn_Inst : Synth_Instance_Acc;
-                                    Stmt : Node);
+   procedure Execute_Failed_Assertion (Syn_Inst : Synth_Instance_Acc;
+                                       Stmt : Node);
+
+   --  Do the final user report: print the full message and maybe stop.
+   --  Free MSG.
+   procedure Report_Assertion_Failure (Syn_Inst : Synth_Instance_Acc;
+                                       Stmt : Node;
+                                       Severity : Natural;
+                                       Msg : String_Acc);
 
    procedure Init_For_Loop_Statement (Inst : Synth_Instance_Acc;
                                       Stmt : Node;
@@ -171,8 +178,10 @@ package Synth.Vhdl_Stmts is
    --  Return the associated choice from CHOICES chain selected by SEL.
    --  It returns the choice (not the associated expression or chain) which
    --  carries the association.
-   function Execute_Static_Choices
-     (Inst : Synth_Instance_Acc; Choices : Node; Sel : Valtyp) return Node;
+   function Execute_Static_Choices (Inst : Synth_Instance_Acc;
+                                    Choices : Node;
+                                    Sel : Valtyp;
+                                    Matching : Boolean) return Node;
 
    function Execute_Static_Case_Statement
      (Inst : Synth_Instance_Acc; Stmt : Node; Sel : Valtyp) return Node;

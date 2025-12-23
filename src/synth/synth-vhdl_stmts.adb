@@ -46,6 +46,7 @@ with Elab.Vhdl_Types; use Elab.Vhdl_Types;
 with Elab.Vhdl_Expr; use Elab.Vhdl_Expr;
 with Elab.Vhdl_Utils; use Elab.Vhdl_Utils;
 with Elab.Vhdl_Debug;
+with Elab.Vhdl_Errors;
 with Elab.Debugger;
 
 with Synth.Errors; use Synth.Errors;
@@ -58,11 +59,13 @@ with Synth.Source;
 with Synth.Vhdl_Static_Proc;
 with Synth.Flags;
 with Synth.Vhdl_Context; use Synth.Vhdl_Context;
+with Synth.Ieee.Std_Logic_1164;
 
 with Netlists.Builders; use Netlists.Builders;
 with Netlists.Folds; use Netlists.Folds;
 with Netlists.Gates; use Netlists.Gates;
 with Netlists.Utils; use Netlists.Utils;
+with Netlists.Concats;
 with Netlists.Locations; use Netlists.Locations;
 
 package body Synth.Vhdl_Stmts is
@@ -103,13 +106,12 @@ package body Synth.Vhdl_Stmts is
       end if;
    end Synth_Waveform;
 
-   procedure Synth_Assignment_Prefix_Indexed_Name
-     (Syn_Inst : Synth_Instance_Acc;
-      Pfx : Node;
-      Dest_Base : in out Valtyp;
-      Dest_Typ : in out Type_Acc;
-      Dest_Off : in out Value_Offsets;
-      Dest_Dyn : in out Dyn_Name)
+   procedure Synth_Object_Indexed_Name (Syn_Inst : Synth_Instance_Acc;
+                                        Pfx : Node;
+                                        Dest_Base : in out Valtyp;
+                                        Dest_Typ : in out Type_Acc;
+                                        Dest_Off : in out Value_Offsets;
+                                        Dest_Dyn : in out Dyn_Name)
    is
       El_Typ : Type_Acc;
       Voff : Net;
@@ -142,15 +144,14 @@ package body Synth.Vhdl_Stmts is
       end if;
 
       Dest_Typ := El_Typ;
-   end Synth_Assignment_Prefix_Indexed_Name;
+   end Synth_Object_Indexed_Name;
 
-   procedure Synth_Assignment_Prefix_Selected_Name
-     (Syn_Inst : Synth_Instance_Acc;
-      Pfx : Node;
-      Dest_Base : in out Valtyp;
-      Dest_Typ : in out Type_Acc;
-      Dest_Off : in out Value_Offsets;
-      Dest_Dyn : in out Dyn_Name)
+   procedure Synth_Object_Selected_Name (Syn_Inst : Synth_Instance_Acc;
+                                         Pfx : Node;
+                                         Dest_Base : in out Valtyp;
+                                         Dest_Typ : in out Type_Acc;
+                                         Dest_Off : in out Value_Offsets;
+                                         Dest_Dyn : in out Dyn_Name)
    is
       pragma Unreferenced (Syn_Inst, Dest_Base, Dest_Dyn);
       Idx : constant Iir_Index32 :=
@@ -158,15 +159,14 @@ package body Synth.Vhdl_Stmts is
    begin
       Dest_Off := Dest_Off + Dest_Typ.Rec.E (Idx + 1).Offs;
       Dest_Typ := Dest_Typ.Rec.E (Idx + 1).Typ;
-   end Synth_Assignment_Prefix_Selected_Name;
+   end Synth_Object_Selected_Name;
 
-   procedure Synth_Assignment_Prefix_Slice_Name
-     (Syn_Inst : Synth_Instance_Acc;
-      Pfx : Node;
-      Dest_Base : in out Valtyp;
-      Dest_Typ : in out Type_Acc;
-      Dest_Off : in out Value_Offsets;
-      Dest_Dyn : in out Dyn_Name)
+   procedure Synth_Object_Slice_Name (Syn_Inst : Synth_Instance_Acc;
+                                      Pfx : Node;
+                                      Dest_Base : in out Valtyp;
+                                      Dest_Typ : in out Type_Acc;
+                                      Dest_Off : in out Value_Offsets;
+                                      Dest_Dyn : in out Dyn_Name)
    is
       Pfx_Bnd : Bound_Type;
       El_Typ : Type_Acc;
@@ -210,20 +210,27 @@ package body Synth.Vhdl_Stmts is
          Arr_Typ := Create_Array_Type (Res_Bnd, False, True, El_Typ);
          Dest_Typ := Create_Slice_Type (Arr_Typ, Res_Bnd.Len, El_Typ);
       end if;
-   end Synth_Assignment_Prefix_Slice_Name;
+   end Synth_Object_Slice_Name;
 
-   procedure Synth_Assignment_Prefix (Syn_Inst : Synth_Instance_Acc;
-                                      Pfx_Inst : Synth_Instance_Acc;
-                                      Pfx : Node;
-                                      Dest_Base : out Valtyp;
-                                      Dest_Typ : out Type_Acc;
-                                      Dest_Off : out Value_Offsets;
-                                      Dest_Dyn : out Dyn_Name)
+   procedure Synth_Object_Name (Syn_Inst : Synth_Instance_Acc;
+                                Pfx_Inst : Synth_Instance_Acc;
+                                Pfx : Node;
+                                Dest_Base : out Valtyp;
+                                Dest_Typ : out Type_Acc;
+                                Dest_Off : out Value_Offsets;
+                                Dest_Dyn : out Dyn_Name)
    is
       procedure Assign_Base (Inst : Synth_Instance_Acc)
       is
          Targ : constant Valtyp := Get_Value (Inst, Pfx);
       begin
+         if Targ = No_Valtyp then
+            Elab.Vhdl_Errors.Error_Msg_Elab
+              (Syn_Inst, Pfx,
+              "reference to a declaration before its elaboration");
+            raise Elab.Vhdl_Errors.Elaboration_Error;
+         end if;
+
          Dest_Dyn := No_Dyn_Name;
          Dest_Typ := Targ.Typ;
 
@@ -241,7 +248,7 @@ package body Synth.Vhdl_Stmts is
          when Iir_Kind_Simple_Name
             | Iir_Kind_Selected_Name
             | Iir_Kind_Attribute_Name =>
-            Synth_Assignment_Prefix
+            Synth_Object_Name
               (Syn_Inst, Pfx_Inst, Get_Named_Entity (Pfx),
                Dest_Base, Dest_Typ, Dest_Off, Dest_Dyn);
          when Iir_Kind_Interface_Signal_Declaration
@@ -254,10 +261,10 @@ package body Synth.Vhdl_Stmts is
            | Iir_Kind_Signal_Declaration
            | Iir_Kind_Guard_Signal_Declaration
            | Iir_Kind_Constant_Declaration
+           | Iir_Kind_Iterator_Declaration
            | Iir_Kind_File_Declaration
            | Iir_Kind_Non_Object_Alias_Declaration
            | Iir_Kind_Object_Alias_Declaration
-           | Iir_Kinds_External_Name
            | Iir_Kind_Attribute_Value
            | Iir_Kind_Free_Quantity_Declaration
            | Iir_Kinds_Branch_Quantity_Declaration
@@ -266,25 +273,40 @@ package body Synth.Vhdl_Stmts is
            | Iir_Kinds_Signal_Attribute =>
             Assign_Base (Pfx_Inst);
 
+         when Iir_Kinds_External_Name =>
+            Dest_Dyn := No_Dyn_Name;
+            Dest_Base := Elab.Vhdl_Expr.Exec_External_Name (Syn_Inst, Pfx);
+            Dest_Typ := Dest_Base.Typ;
+            Dest_Off := No_Value_Offsets;
+
          when Iir_Kind_Indexed_Name =>
-            Synth_Assignment_Prefix
+            Synth_Object_Name
               (Syn_Inst, Pfx_Inst, Get_Prefix (Pfx),
                Dest_Base, Dest_Typ, Dest_Off, Dest_Dyn);
-            Synth_Assignment_Prefix_Indexed_Name
+            if Dest_Base = No_Valtyp then
+               return;
+            end if;
+            Synth_Object_Indexed_Name
               (Syn_Inst, Pfx, Dest_Base, Dest_Typ, Dest_Off, Dest_Dyn);
 
          when Iir_Kind_Selected_Element =>
-            Synth_Assignment_Prefix
+            Synth_Object_Name
               (Syn_Inst, Pfx_Inst, Get_Prefix (Pfx),
                Dest_Base, Dest_Typ, Dest_Off, Dest_Dyn);
-            Synth_Assignment_Prefix_Selected_Name
+            if Dest_Base = No_Valtyp then
+               return;
+            end if;
+            Synth_Object_Selected_Name
               (Syn_Inst, Pfx, Dest_Base, Dest_Typ, Dest_Off, Dest_Dyn);
 
          when Iir_Kind_Slice_Name =>
-            Synth_Assignment_Prefix
+            Synth_Object_Name
               (Syn_Inst, Pfx_Inst, Get_Prefix (Pfx),
                Dest_Base, Dest_Typ, Dest_Off, Dest_Dyn);
-            Synth_Assignment_Prefix_Slice_Name
+            if Dest_Base = No_Valtyp then
+               return;
+            end if;
+            Synth_Object_Slice_Name
               (Syn_Inst, Pfx, Dest_Base, Dest_Typ, Dest_Off, Dest_Dyn);
 
 
@@ -294,7 +316,7 @@ package body Synth.Vhdl_Stmts is
                Acc : Memtyp;
                Idx : Heap_Ptr;
             begin
-               Synth_Assignment_Prefix
+               Synth_Object_Name
                  (Syn_Inst, Get_Prefix (Pfx), Dest_Base, Dest_Typ, Dest_Off);
                Acc := (Dest_Typ, Dest_Base.Val.Mem + Dest_Off.Mem_Off);
                Idx := Read_Access (Acc);
@@ -318,12 +340,11 @@ package body Synth.Vhdl_Stmts is
             Dest_Off := (0, 0);
             Dest_Dyn := No_Dyn_Name;
 
-         when others =>
-            Error_Kind ("synth_assignment_prefix", Pfx);
+         when others => Error_Kind ("synth_object_name", Pfx);
       end case;
-   end Synth_Assignment_Prefix;
+   end Synth_Object_Name;
 
-   procedure Synth_Assignment_Prefix (Syn_Inst : Synth_Instance_Acc;
+   procedure Synth_Object_Name (Syn_Inst : Synth_Instance_Acc;
                                       Pfx : Node;
                                       Dest_Base : out Valtyp;
                                       Dest_Typ : out Type_Acc;
@@ -331,10 +352,10 @@ package body Synth.Vhdl_Stmts is
    is
       Dyn : Dyn_Name;
    begin
-      Synth_Assignment_Prefix
+      Synth_Object_Name
         (Syn_Inst, Syn_Inst, Pfx, Dest_Base, Dest_Typ, Dest_Off, Dyn);
       pragma Assert (Dyn = No_Dyn_Name);
-   end Synth_Assignment_Prefix;
+   end Synth_Object_Name;
 
    function Synth_Aggregate_Target_Type (Syn_Inst : Synth_Instance_Acc;
                                          Target : Node) return Type_Acc
@@ -409,8 +430,7 @@ package body Synth.Vhdl_Stmts is
          when Type_Unbounded_Array =>
             pragma Assert (Base_Typ.Ulast);
             Res := Create_Array_Type (Bnd, False, True, Base_Typ.Uarr_El);
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
       return Res;
    end Synth_Aggregate_Target_Type;
@@ -456,7 +476,8 @@ package body Synth.Vhdl_Stmts is
            | Iir_Kind_Slice_Name
            | Iir_Kind_Dereference
            | Iir_Kind_Dot_Attribute
-           | Iir_Kinds_Signal_Attribute =>
+           | Iir_Kinds_Signal_Attribute
+           | Iir_Kind_External_Signal_Name =>
             declare
                Base : Valtyp;
                Typ : Type_Acc;
@@ -464,12 +485,11 @@ package body Synth.Vhdl_Stmts is
 
                Dyn : Dyn_Name;
             begin
-               Synth_Assignment_Prefix
+               Synth_Object_Name
                  (Syn_Inst, Syn_Inst, Target, Base, Typ, Off, Dyn);
                return To_Target_Info (Base, Typ, Off, Dyn);
             end;
-         when others =>
-            Error_Kind ("synth_target", Target);
+         when others => Error_Kind ("synth_target", Target);
       end case;
    end Synth_Target;
 
@@ -511,8 +531,7 @@ package body Synth.Vhdl_Stmts is
                   Typ.Sz);
                return Res;
             end;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Aggregate_Array_Extract;
 
@@ -543,8 +562,7 @@ package body Synth.Vhdl_Stmts is
                             Val.Val.Mem + El_Typ.Offs.Mem_Off, El_Typ.Typ.Sz);
                return Res;
             end;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Aggregate_Record_Extract;
 
@@ -587,8 +605,8 @@ package body Synth.Vhdl_Stmts is
                                                          Targ_Info.Targ_Type,
                                                          Assoc_Expr),
                                 Loc);
-                     when others =>
-                        Error_Kind ("assign_aggregate(arr)", Choice);
+                     when others => Error_Kind ("assign_aggregate(arr)",
+                                                Choice);
                   end case;
                   Choice := Get_Chain (Choice);
                end loop;
@@ -617,14 +635,13 @@ package body Synth.Vhdl_Stmts is
                                                           Targ_Info.Targ_Type,
                                                           Assoc_Expr),
                                 Loc);
-                     when others =>
-                        Error_Kind ("assign_aggregate(rec)", Choice);
+                     when others => Error_Kind ("assign_aggregate(rec)",
+                                                Choice);
                   end case;
                   Choice := Get_Chain (Choice);
                end loop;
             end;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Assign_Aggregate;
 
@@ -672,13 +689,9 @@ package body Synth.Vhdl_Stmts is
             Phi_Assign_Net (Ctxt, W, Get_Net (Ctxt, V), Off.Net_Off);
          end if;
       else
-         if not Is_Static (V.Val) then
-            --  Maybe the error message is too cryptic ?
-            Error_Msg_Synth
-              (Syn_Inst, Loc, "cannot assign a net to a static value");
-         else
-            Copy_Memory (Targ.Val.Mem + Off.Mem_Off, Get_Memory (V), V.Typ.Sz);
-         end if;
+         pragma Assert (Is_Static (V.Val));
+         --  Maybe the error message is too cryptic ?
+         Copy_Memory (Targ.Val.Mem + Off.Mem_Off, Get_Memory (V), V.Typ.Sz);
       end if;
    end Synth_Assignment_Simple;
 
@@ -773,9 +786,8 @@ package body Synth.Vhdl_Stmts is
       if Res_Typ.W = Obj.Typ.W then
          --  The only possible offset is 0.
          null;
-      elsif Res_Typ.W = 0 then
-         N := Build_Const_X (Ctxt, 0);
       else
+         pragma Assert (Res_Typ.W > 0);
          if Dyn.Voff /= No_Net then
             Synth.Source.Set_Location_Maybe (N, Loc);
             --  Do not try to extract if the net is null.
@@ -819,14 +831,7 @@ package body Synth.Vhdl_Stmts is
                                   Targ.Targ_Type.Sz);
                      return Res;
                   end;
-               when Value_Quantity
-                 | Value_Terminal
-                 | Value_Const
-                 | Value_Alias
-                 | Value_Dyn_Alias
-                 | Value_Signal
-                 | Value_Sig_Val =>
-                  raise Internal_Error;
+               when others => raise Internal_Error;
             end case;
          when Target_Aggregate => raise Internal_Error;
          when Target_Memory =>
@@ -872,6 +877,10 @@ package body Synth.Vhdl_Stmts is
    begin
       Mark_Expr_Pool (Marker);
       Targ := Synth_Target (Syn_Inst, Get_Target (Stmt));
+      if Targ.Targ_Type = null then
+         --  Return now in case of error.
+         return;
+      end if;
       Cwf := Get_Conditional_Waveform_Chain (Stmt);
       Cond := Get_Condition (Cwf);
       Next_Cwf := Get_Chain (Cwf);
@@ -1179,9 +1188,7 @@ package body Synth.Vhdl_Stmts is
             | Vhdl.Ieee.Std_Logic_1164.Std_Logic_W_Pos =>
             Warning_Msg_Synth (+Loc, "choice with meta-value is ignored");
             return True;
-         when others =>
-            --  Only 9 values.
-            raise Internal_Error;
+         when others => raise Internal_Error; --  Only 9 values.
       end case;
    end Ignore_Choice_Logic;
 
@@ -1212,8 +1219,7 @@ package body Synth.Vhdl_Stmts is
             end if;
          when Type_Array =>
             return False;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Ignore_Choice_Expression;
 
@@ -1681,9 +1687,13 @@ package body Synth.Vhdl_Stmts is
       Free_Net_Array (Nets);
    end Synth_Case_Statement_Dynamic;
 
-   function Execute_Static_Choices_Array
-     (Inst : Synth_Instance_Acc; Choices : Node; Sel : Valtyp) return Node
+   function Execute_Static_Choices_Array (Inst : Synth_Instance_Acc;
+                                          Choices : Node;
+                                          Sel : Valtyp;
+                                          Matching : Boolean) return Node
    is
+      use Synth.Vhdl_Eval;
+      use Synth.Ieee.Std_Logic_1164;
       Choice : Node;
       Sel_Expr : Node;
       Sel_Val : Valtyp;
@@ -1702,8 +1712,16 @@ package body Synth.Vhdl_Stmts is
             when Iir_Kind_Choice_By_Expression =>
                Sel_Expr := Get_Choice_Expression (Choice);
                Sel_Val := Synth_Expression_With_Basetype (Inst, Sel_Expr);
-               if Is_Equal (Sel_Val, Sel) then
-                  return Res;
+               if Matching then
+                  if Eval_Vector_Match (Get_Memtyp (Sel_Val),
+                                        Get_Memtyp (Sel)) = '1'
+                  then
+                     return Res;
+                  end if;
+               else
+                  if Is_Equal (Sel_Val, Sel) then
+                     return Res;
+                  end if;
                end if;
                if Sel_Val.Typ.Abound.Len /= Sel.Typ.Abound.Len then
                   Error_Msg_Synth (Inst, Choice, "incorrect selector length");
@@ -1711,8 +1729,7 @@ package body Synth.Vhdl_Stmts is
                end if;
             when Iir_Kind_Choice_By_Others =>
                return Res;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
          Choice := Get_Chain (Choice);
       end loop;
@@ -1751,27 +1768,28 @@ package body Synth.Vhdl_Stmts is
                      return Res;
                   end if;
                end;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
          Choice := Get_Chain (Choice);
       end loop;
    end Execute_Static_Choices_Scalar;
 
-   function Execute_Static_Choices
-     (Inst : Synth_Instance_Acc; Choices : Node; Sel : Valtyp) return Node is
+   function Execute_Static_Choices (Inst : Synth_Instance_Acc;
+                                    Choices : Node;
+                                    Sel : Valtyp;
+                                    Matching : Boolean) return Node is
    begin
       case Sel.Typ.Kind is
          when Type_Bit
            | Type_Logic
            | Type_Discrete =>
+            pragma Assert (not Matching);
             return Execute_Static_Choices_Scalar (Inst, Choices,
                                                   Read_Discrete (Sel));
          when Type_Vector
            | Type_Array =>
-            return Execute_Static_Choices_Array (Inst, Choices, Sel);
-         when others =>
-            raise Internal_Error;
+            return Execute_Static_Choices_Array (Inst, Choices, Sel, Matching);
+         when others => raise Internal_Error;
       end case;
    end Execute_Static_Choices;
 
@@ -1779,9 +1797,10 @@ package body Synth.Vhdl_Stmts is
      (Inst : Synth_Instance_Acc; Stmt : Node; Sel : Valtyp) return Node
    is
       Choices : constant Node := Get_Case_Statement_Alternative_Chain (Stmt);
+      Matching : constant Boolean := Get_Matching_Flag (Stmt);
       Choice : Node;
    begin
-      Choice := Execute_Static_Choices (Inst, Choices, Sel);
+      Choice := Execute_Static_Choices (Inst, Choices, Sel, Matching);
       return Get_Associated_Chain (Choice);
    end Execute_Static_Case_Statement;
 
@@ -1823,8 +1842,7 @@ package body Synth.Vhdl_Stmts is
             Assoc := Get_Associated_Expr (Choice);
             Val := Synth_Expression_With_Type
               (Syn_Inst, Assoc, Targ_Type);
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
       return Val;
    end Synth_Selected_Assignment_Choice;
@@ -1869,7 +1887,8 @@ package body Synth.Vhdl_Stmts is
          declare
             Choice : Node;
          begin
-            Choice := Execute_Static_Choices (Syn_Inst, Choices, Sel);
+            Choice := Execute_Static_Choices
+              (Syn_Inst, Choices, Sel, Get_Matching_Flag (Stmt));
             Asgn := Synth_Selected_Assignment_Choice
               (Syn_Inst, Kind, Choice, Targ_Type);
          end;
@@ -2021,8 +2040,7 @@ package body Synth.Vhdl_Stmts is
                     (Obj, Info.Off, Info.Targ_Type, Instance_Pool);
                end if;
             end;
-         when Target_Aggregate =>
-            raise Internal_Error;
+         when Target_Aggregate => raise Internal_Error;
          when Target_Memory =>
             return Create_Value_Dyn_Alias (Info.Mem_Obj.Val,
                                            Info.Mem_Dyn.Pfx_Off.Net_Off,
@@ -2107,8 +2125,7 @@ package body Synth.Vhdl_Stmts is
       end if;
 
       case Iir_Kinds_Interface_Object_Declaration (Get_Kind (Inter)) is
-         when Iir_Kind_Interface_Constant_Declaration =>
-            raise Internal_Error;
+         when Iir_Kind_Interface_Constant_Declaration => raise Internal_Error;
          when Iir_Kind_Interface_Variable_Declaration =>
             --  Always pass by value.
             if Is_Copyback_Parameter (Inter) then
@@ -2196,10 +2213,8 @@ package body Synth.Vhdl_Stmts is
             return Val;
          when Iir_Kind_Interface_File_Declaration =>
             return Info.Obj;
-         when Iir_Kind_Interface_Quantity_Declaration =>
-            raise Internal_Error;
-         when Iir_Kind_Interface_View_Declaration =>
-            raise Internal_Error;
+         when Iir_Kind_Interface_Quantity_Declaration => raise Internal_Error;
+         when Iir_Kind_Interface_View_Declaration => raise Internal_Error;
       end case;
    end Synth_Subprogram_Association;
 
@@ -2258,11 +2273,10 @@ package body Synth.Vhdl_Stmts is
          when Type_Array_Unbounded =>
             return Create_Array_Unbounded_Type
               (Typ.Abound, Typ.Is_Bnd_Static, Typ.Alast,
-               Copy_Unbounded_Type (Typ.Uarr_El, Base.Uarr_El));
+               Copy_Unbounded_Type (Typ.Arr_El, Base.Arr_El));
          when Type_Unbounded_Vector =>
             return Create_Unbounded_Vector (Typ.Uarr_Idx, Typ.Uarr_El);
-         when Type_Slice =>
-            raise Internal_Error;
+         when Type_Slice => raise Internal_Error;
       end case;
    end Copy_Unbounded_Type;
 
@@ -2292,7 +2306,7 @@ package body Synth.Vhdl_Stmts is
                Dest_Dyn : Dyn_Name;
             begin
                Dest_Dyn := No_Dyn_Name;
-               Synth_Assignment_Prefix_Indexed_Name
+               Synth_Object_Indexed_Name
                  (Syn_Inst, Pfx, Dest_Base, Dest_Typ, Dest_Off, Dest_Dyn);
                pragma Assert (Dest_Dyn = No_Dyn_Name);
             end;
@@ -2305,7 +2319,7 @@ package body Synth.Vhdl_Stmts is
                Dest_Dyn : Dyn_Name;
             begin
                Dest_Dyn := No_Dyn_Name;
-               Synth_Assignment_Prefix_Selected_Name
+               Synth_Object_Selected_Name
                  (Syn_Inst, Pfx, Dest_Base, Dest_Typ, Dest_Off, Dest_Dyn);
                pragma Assert (Dest_Dyn = No_Dyn_Name);
             end;
@@ -2318,13 +2332,12 @@ package body Synth.Vhdl_Stmts is
                Dest_Dyn : Dyn_Name;
             begin
                Dest_Dyn := No_Dyn_Name;
-               Synth_Assignment_Prefix_Slice_Name
+               Synth_Object_Slice_Name
                  (Syn_Inst, Pfx, Dest_Base, Dest_Typ, Dest_Off, Dest_Dyn);
                pragma Assert (Dest_Dyn = No_Dyn_Name);
             end;
 
-         when others =>
-            Error_Kind ("synth_individual_formal", Pfx);
+         when others => Error_Kind ("synth_individual_formal", Pfx);
       end case;
    end Synth_Individual_Formal;
 
@@ -2365,8 +2378,7 @@ package body Synth.Vhdl_Stmts is
               (Inter_Typ, Get_Prefix (Pfx));
             return Parent_Typ;
 
-         when others =>
-            Error_Kind ("synth_individual_get_formal_type", Pfx);
+         when others => Error_Kind ("synth_individual_get_formal_type", Pfx);
       end case;
    end Synth_Individual_Get_Formal_Type;
 
@@ -2377,7 +2389,6 @@ package body Synth.Vhdl_Stmts is
                                            Pfx : Node;
                                            Pfx_Typ : Type_Acc)
    is
-      pragma Unreferenced (Syn_Inst);
       Parent_Typ : Type_Acc;
    begin
       Parent_Typ := Synth_Individual_Get_Formal_Type
@@ -2407,13 +2418,15 @@ package body Synth.Vhdl_Stmts is
                if not Is_Bounded_Type (Sub_Inter) then
                   Parent_Typ.Rec.E (Idx + 1).Typ := Pfx_Typ;
                else
-                  --  check shape ?
-                  null;
+                  if not Check_Matching_Bounds
+                    (Syn_Inst, Sub_Inter, Pfx_Typ, Pfx)
+                  then
+                     null;
+                  end if;
                end if;
             end;
 
-         when others =>
-            Error_Kind ("synth_individual_formal_type", Pfx);
+         when others => Error_Kind ("synth_individual_formal_type", Pfx);
       end case;
    end Synth_Individual_Formal_Type;
 
@@ -2436,6 +2449,22 @@ package body Synth.Vhdl_Stmts is
       Inter_Typ : Type_Acc;
       Static : Boolean;
       Res : Valtyp;
+
+      function Form_Off_Lt (L, R : Positive) return Boolean is
+      begin
+         return Assocs (L).Form_Off.Net_Off < Assocs (R).Form_Off.Net_Off;
+      end Form_Off_Lt;
+
+      procedure Swap (L, R : Positive)
+      is
+         Tmp : constant Assoc_Record := Assocs (L);
+      begin
+         Assocs (L) := Assocs (R);
+         Assocs (R) := Tmp;
+      end Swap;
+
+      procedure Form_Off_Sort is
+         new Grt.Algos.Heap_Sort (Lt => Form_Off_Lt, Swap => Swap);
    begin
       --  2. Build array formal-value
       Assocs := new Assoc_Array (1 .. Count);
@@ -2474,8 +2503,8 @@ package body Synth.Vhdl_Stmts is
                Act_Off := No_Value_Offsets;
                Act_Dyn := No_Dyn_Name;
             else
-               Synth_Assignment_Prefix (Caller_Inst, Caller_Inst, Actual,
-                                        Act_Base, Act_Typ, Act_Off, Act_Dyn);
+               Synth_Object_Name (Caller_Inst, Caller_Inst, Actual,
+                                  Act_Base, Act_Typ, Act_Off, Act_Dyn);
             end if;
             if Get_Actual_Conversion (Assoc) /= Null_Node then
                --  TODO
@@ -2508,18 +2537,12 @@ package body Synth.Vhdl_Stmts is
             when Type_Unbounded_Record =>
                --  TODO: unbounded record with unbounded elements.
                Formal_Typ := Create_Record_Type (Formal_Typ, Formal_Typ.Rec);
-            when Type_Unbounded_Array
-              | Type_Unbounded_Vector =>
-               raise Internal_Error;
             when Type_Array_Unbounded =>
                pragma Assert (Formal_Typ.Alast); --  TODO.
                Formal_Typ := Create_Array_Type
                  (Formal_Typ.Abound, False, Formal_Typ.Alast,
                   Formal_Typ.Arr_El);
-            when Type_Array
-              | Type_Vector
-              | Type_Record =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
 
          --  Re-evaluate the formals to re-compute the offset.
@@ -2555,8 +2578,32 @@ package body Synth.Vhdl_Stmts is
       elsif Flags.Flag_Simulation then
          Res := Hook_Create_Value_For_Signal_Individual_Assocs
            (Subprg_Inst, Assocs.all, Formal_Typ);
+      elsif Get_Mode (Inter) = Iir_In_Mode then
+         declare
+            use Netlists.Concats;
+            Ctxt : constant Context_Acc := Get_Build (Caller_Inst);
+            Concat : Concat_Type;
+            Res_N : Net;
+         begin
+            --  Not static.
+            Set_Instance_Const (Subprg_Inst, False);
+
+            Form_Off_Sort (Assocs'Length);
+            for I in Assocs'Range loop
+               declare
+                  A : Assoc_Record renames Assocs (I);
+                  El : Valtyp;
+               begin
+                  El := Synth_Read_Memory
+                    (Caller_Inst, A.Act_Base, A.Act_Typ,
+                     A.Act_Off.Net_Off, A.Act_Dyn, A.Formal);
+                  Append (Concat, Get_Net (Ctxt, El));
+               end;
+            end loop;
+            Build (Ctxt, Concat, +First_Assoc, Res_N);
+            Res := Create_Value_Net (Res_N, Formal_Typ, Instance_Pool);
+         end;
       else
-         Res := No_Valtyp;
          raise Internal_Error;
       end if;
 
@@ -2689,8 +2736,7 @@ package body Synth.Vhdl_Stmts is
             begin
                Res := Synth_Type_Conversion (Inst, Val, Conv_Typ, Func);
             end;
-         when others =>
-            Vhdl.Errors.Error_Kind ("synth_association_conversion", Func);
+         when others => Error_Kind ("synth_association_conversion", Func);
       end case;
       Res := Synth.Vhdl_Expr.Synth_Subtype_Conversion
         (Inst, Res, Res_Typ, False, Func);
@@ -3036,39 +3082,6 @@ package body Synth.Vhdl_Stmts is
       return Res;
    end Synth_Protected_Call_Instance;
 
-   --  Copy the result of a function EXPR to the expr_pool, so that if a local
-   --  value is returned, it is saved before the local instance is destroyed.
-   function Unshare_Result (Expr : Valtyp) return Valtyp
-   is
-      Res : Valtyp;
-   begin
-      if Expr.Val.Kind = Value_Alias then
-         --  If the result is an alias, extract the value (on the right pool).
-         declare
-            Val : constant Value_Acc := Expr.Val.A_Obj;
-            Mt : Memtyp;
-         begin
-            case Val.Kind is
-               when Value_Memory =>
-                  Mt := Get_Value_Memtyp ((Expr.Val.A_Typ, Val));
-                  Res := Create_Value_Memory (Expr.Typ, Expr_Pool'Access);
-                  Copy_Memory (Res.Val.Mem, Mt.Mem + Expr.Val.A_Off.Mem_Off,
-                               Expr.Typ.Sz);
-                  return Res;
-               when Value_Wire =>
-                  --  No need to unshare it: the value is assigned to the
-                  --  result (as a net), so it is not kept.
-                  return Expr;
-               when others =>
-                  --  Is it possible ?
-                  raise Internal_Error;
-            end case;
-         end;
-      else
-         return Unshare (Expr, Expr_Pool'Access);
-      end if;
-   end Unshare_Result;
-
    function Synth_Subprogram_Call (Syn_Inst : Synth_Instance_Acc;
                                    Call : Node;
                                    Imp : Node;
@@ -3093,8 +3106,7 @@ package body Synth.Vhdl_Stmts is
          when Iir_Kind_Function_Call
            | Iir_Kind_Procedure_Call =>
             Obj := Get_Method_Object (Call);
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
 
       if Obj /= Null_Node then
@@ -3139,7 +3151,7 @@ package body Synth.Vhdl_Stmts is
       end if;
 
       if Elab.Debugger.Flag_Need_Debug then
-         Elab.Debugger.Debug_Leave (Sub_Inst);
+         Elab.Debugger.Debug_Leave (Sub_Inst);  -- GCOV_EXCL_LINE
       end if;
 
       Free_Instance (Sub_Inst);
@@ -3214,6 +3226,11 @@ package body Synth.Vhdl_Stmts is
 
       Synth_Subprogram_Back_Association
         (Sub_Inst, Syn_Inst, Inter_Chain, Assoc_Chain);
+
+      --  Propagate error.
+      if Is_Error (Sub_Inst) then
+         Set_Error (Syn_Inst);
+      end if;
 
       Free_Instance (Sub_Inst);
       Areapools.Release (Area_Mark, Instance_Pool.all);
@@ -3490,6 +3507,11 @@ package body Synth.Vhdl_Stmts is
       Mark_Expr_Pool (Marker);
       if Cond /= Null_Node then
          Cond_Val := Synth_Expression (C.Inst, Cond);
+         if Cond_Val = No_Valtyp then
+            Release_Expr_Pool (Marker);
+            return;
+         end if;
+
          Static_Cond := Is_Static_Val (Cond_Val.Val);
          if Static_Cond then
             if Get_Static_Discrete (Cond_Val) = 0 then
@@ -3664,6 +3686,7 @@ package body Synth.Vhdl_Stmts is
       if In_Range (Val.Typ.Drange, Read_Discrete (Val)) then
          loop
             Synth_Sequential_Statements (C, Stmts);
+            exit when Is_Error (C.Inst);
 
             Loop_Control_Update (C);
 
@@ -3811,6 +3834,7 @@ package body Synth.Vhdl_Stmts is
 
          --  Exit from the loop if S_Exit/S_Quit
          exit when Lc.S_Exit or Lc.S_Quit or C.Nbr_Ret > 0;
+         exit when Is_Error (C.Inst);
       end loop;
 
       C.Cur_Loop := Lc.Prev_Loop;
@@ -3837,7 +3861,8 @@ package body Synth.Vhdl_Stmts is
                --  Copy a result of the function call.
                --  The result can be a local variable which will be released.
                --  It can also be an alias of a local variable.
-               C.Ret_Value := Unshare_Result (Val);
+               pragma Assert (Val.Val.Kind /= Value_Alias);
+               C.Ret_Value := Unshare (Val, Expr_Pool'Access);
                if not Is_Bounded_Type (C.Ret_Typ) then
                   --  The function was declared with an unconstrained
                   --  return type.  Now that a value has been returned,
@@ -3877,14 +3902,108 @@ package body Synth.Vhdl_Stmts is
    procedure Disp_A_Frame_Err is new
      Elab.Debugger.Gen_Disp_A_Frame (Simple_IO.Put_Err);
 
-   procedure Exec_Failed_Assertion (Syn_Inst : Synth_Instance_Acc;
-                                    Stmt : Node)
+   procedure Assertion_Report_Default (Syn_Inst : Synth_Instance_Acc;
+                                       Stmt : Node;
+                                       Severity : Natural;
+                                       Msg : String_Acc)
    is
       use Simple_IO;
+   begin
+      Put_Err (Disp_Location (Stmt));
+      Put_Err (":(");
+      case Get_Kind (Stmt) is
+         when Iir_Kind_Report_Statement =>
+            Put_Err ("report");
+         when Iir_Kind_Assertion_Statement
+           | Iir_Kind_Concurrent_Assertion_Statement
+           | Iir_Kinds_Dyadic_Operator =>
+            Put_Err ("assert");
+
+         --  GCOV_EXCL_START (handler used instead)
+         when Iir_Kind_Psl_Assert_Directive =>
+            Put_Err ("psl assertion");
+         when Iir_Kind_Psl_Assume_Directive =>
+            Put_Err ("psl assumption");
+         when Iir_Kind_Psl_Cover_Directive =>
+            Put_Err ("psl cover");
+         when others => raise Internal_Error;
+         --  GCOV_EXCL_STOP
+      end case;
+      Put_Err (' ');
+      case Severity is
+         when Note_Severity =>
+            Put_Err ("note");
+         when Warning_Severity =>
+            Put_Err ("warning");
+         when Error_Severity =>
+            Put_Err ("error");
+         when Failure_Severity =>
+            Put_Err ("failure");
+         when others => raise Internal_Error;
+      end case;
+      Put_Err ("): ");
+
+      if Msg = null then
+         case Get_Kind (Stmt) is
+            when Iir_Kind_Report_Statement
+              | Iir_Kind_Assertion_Statement
+              | Iir_Kind_Concurrent_Assertion_Statement
+              | Iir_Kind_Psl_Assert_Directive =>
+               Put_Line_Err ("Assertion violation.");
+            --  GCOV_EXCL_START (handler used instead)
+            when Iir_Kind_Psl_Assume_Directive =>
+               Put_Line_Err ("Assumption violation.");
+            when Iir_Kind_Psl_Cover_Directive =>
+               Put_Line_Err ("sequence covered.");
+            when others => raise Internal_Error;
+            --  GCOV_EXCL_STOP
+         end case;
+      else
+         Put_Line_Err (Msg.all);
+      end if;
+
+      declare
+         Inst : Synth_Instance_Acc;
+      begin
+         Inst := Get_Caller_Instance (Syn_Inst);
+         while Inst /= null loop
+            Simple_IO.Put_Err (" called from: ");
+            Disp_A_Frame_Err (Inst);
+            Simple_IO.New_Line_Err;
+            Inst := Get_Caller_Instance (Inst);
+         end loop;
+      end;
+   end Assertion_Report_Default;
+
+   procedure Report_Assertion_Failure (Syn_Inst : Synth_Instance_Acc;
+                                       Stmt : Node;
+                                       Severity : Natural;
+                                       Msg : String_Acc)
+   is
+      Tmp : String_Acc;
+   begin
+      if Assertion_Report_Handler /= null then
+         Assertion_Report_Handler (Syn_Inst, Stmt, Severity, Msg);
+      else
+         Assertion_Report_Default (Syn_Inst, Stmt, Severity, Msg);
+      end if;
+
+      Tmp := Msg;
+      Free (Tmp);
+
+      if Severity >= Flags.Severity_Level then
+         Error_Msg_Synth (Syn_Inst, Stmt, "error due to assertion failure");
+      end if;
+   end Report_Assertion_Failure;
+
+   procedure Execute_Failed_Assertion (Syn_Inst : Synth_Instance_Acc;
+                                       Stmt : Node)
+   is
       Rep_Expr : constant Node := Get_Report_Expression (Stmt);
       Sev_Expr : Node;
       Marker : Mark_Type;
       Rep : Valtyp;
+      Rep_Str : String_Acc;
       Sev : Valtyp;
       Sev_V : Natural;
    begin
@@ -3897,7 +4016,9 @@ package body Synth.Vhdl_Stmts is
             Release_Expr_Pool (Marker);
             return;
          end if;
-         Strip_Const (Rep);
+         Rep_Str := new String'(Value_To_String (Rep));
+      else
+         Rep_Str := null;
       end if;
 
       if Get_Kind (Stmt) /= Iir_Kind_Psl_Cover_Directive then
@@ -3932,82 +4053,15 @@ package body Synth.Vhdl_Stmts is
          Sev_V := Note_Severity;
       end if;
 
-      if Assertion_Report_Handler /= null then
-         Assertion_Report_Handler (Syn_Inst, Stmt, Sev_V, Rep);
-      else
-         Put_Err (Disp_Location (Stmt));
-         Put_Err (":(");
-         case Get_Kind (Stmt) is
-            when Iir_Kind_Report_Statement =>
-               Put_Err ("report");
-            when Iir_Kind_Assertion_Statement
-              | Iir_Kind_Concurrent_Assertion_Statement =>
-               Put_Err ("assert");
-            when Iir_Kind_Psl_Assert_Directive =>
-               Put_Err ("psl assertion");
-            when Iir_Kind_Psl_Assume_Directive =>
-               Put_Err ("psl assumption");
-            when Iir_Kind_Psl_Cover_Directive =>
-               Put_Err ("psl cover");
-            when others =>
-               raise Internal_Error;
-         end case;
-         Put_Err (' ');
-         case Sev_V is
-            when Note_Severity =>
-               Put_Err ("note");
-            when Warning_Severity =>
-               Put_Err ("warning");
-            when Error_Severity =>
-               Put_Err ("error");
-            when Failure_Severity =>
-               Put_Err ("failure");
-            when others =>
-               Put_Err ("??");
-         end case;
-         Put_Err ("): ");
-
-         if Rep = No_Valtyp then
-            case Get_Kind (Stmt) is
-               when Iir_Kind_Report_Statement
-                 | Iir_Kind_Assertion_Statement
-                 | Iir_Kind_Concurrent_Assertion_Statement
-                 | Iir_Kind_Psl_Assert_Directive =>
-                  Put_Line_Err ("Assertion violation.");
-               when Iir_Kind_Psl_Assume_Directive =>
-                  Put_Line_Err ("Assumption violation.");
-               when Iir_Kind_Psl_Cover_Directive =>
-                  Put_Line_Err ("sequence covered.");
-               when others => raise Internal_Error;
-            end case;
-         else
-            Put_Line_Err (Value_To_String (Rep));
-         end if;
-
-         declare
-            Inst : Synth_Instance_Acc;
-         begin
-            Inst := Get_Caller_Instance (Syn_Inst);
-            while Inst /= null loop
-               Simple_IO.Put_Err (" called from: ");
-               Disp_A_Frame_Err (Inst);
-               Simple_IO.New_Line_Err;
-               Inst := Get_Caller_Instance (Inst);
-            end loop;
-         end;
-      end if;
-
       Release_Expr_Pool (Marker);
 
-      if Sev_V >= Flags.Severity_Level then
-         Error_Msg_Synth (Syn_Inst, Stmt, "error due to assertion failure");
-      end if;
-   end Exec_Failed_Assertion;
+      Report_Assertion_Failure (Syn_Inst, Stmt, Sev_V, Rep_Str);
+   end Execute_Failed_Assertion;
 
    procedure Execute_Report_Statement (Inst : Synth_Instance_Acc;
                                        Stmt : Node) is
    begin
-      Exec_Failed_Assertion (Inst, Stmt);
+      Execute_Failed_Assertion (Inst, Stmt);
    end Execute_Report_Statement;
 
    procedure Execute_Assertion_Statement (Inst : Synth_Instance_Acc;
@@ -4031,7 +4085,7 @@ package body Synth.Vhdl_Stmts is
       if C then
          return;
       end if;
-      Exec_Failed_Assertion (Inst, Stmt);
+      Execute_Failed_Assertion (Inst, Stmt);
    end Execute_Assertion_Statement;
 
    procedure Synth_Dynamic_Assertion_Statement (C : Seq_Context; Stmt : Node)
@@ -4084,10 +4138,10 @@ package body Synth.Vhdl_Stmts is
       end if;
 
       if Flags.Flag_Trace_Statements then
-         Elab.Vhdl_Debug.Put_Stmt_Trace (Stmt);
+         Elab.Vhdl_Debug.Put_Stmt_Trace (Stmt); -- GCOV_EXCL_LINE
       end if;
       if Elab.Debugger.Flag_Need_Debug then
-         Elab.Debugger.Debug_Break (C.Inst, Stmt);
+         Elab.Debugger.Debug_Break (C.Inst, Stmt); -- GCOV_EXCL_LINE
       end if;
 
       Set_Covered_Flag (Stmt, True);
@@ -4162,8 +4216,7 @@ package body Synth.Vhdl_Stmts is
             --  is called from a sensitized process.
             --  But this could also be detected during elaboration.
             null;
-         when others =>
-            Error_Kind ("synth_sequential_statements", Stmt);
+         when others => Error_Kind ("synth_sequential_statements", Stmt);
       end case;
       if Is_Dyn then
          if Has_Phi then
@@ -4194,7 +4247,7 @@ package body Synth.Vhdl_Stmts is
       Stmt := Stmts;
       while Is_Valid (Stmt) loop
          Synth_Sequential_Statement (C, Stmt, Stop);
-         exit when Stop;
+         exit when Stop or else Is_Error (C.Inst);
          Stmt := Get_Chain (Stmt);
       end loop;
    end Synth_Sequential_Statements;
@@ -4406,6 +4459,7 @@ package body Synth.Vhdl_Stmts is
             Lib := Get_Library (Get_Design_File (Unit));
             if Get_Identifier (Lib) = Std_Names.Name_Ieee then
                case Get_Identifier (Pkg) is
+                  --  GCOV_EXCL_START (not called)
                   when Std_Names.Name_Std_Logic_1164
                     | Std_Names.Name_Numeric_Std
                     | Std_Names.Name_Numeric_Bit
@@ -4420,6 +4474,8 @@ package body Synth.Vhdl_Stmts is
                         "unhandled call to ieee function %i", +Imp);
                      Set_Error (Syn_Inst);
                      return No_Valtyp;
+                  --  GCOV_EXCL_STOP
+
                   when others =>
                      --  Other ieee packages are handled as normal packages.
                      null;
@@ -4446,7 +4502,7 @@ package body Synth.Vhdl_Stmts is
          Set_Error (Syn_Inst);
       elsif Is_Static (Val.Val) then
          if Read_Discrete (Val) /= 1 then
-            Exec_Failed_Assertion (Syn_Inst, Stmt);
+            Execute_Failed_Assertion (Syn_Inst, Stmt);
          end if;
       elsif Flags.Flag_Formal then
          Inst := Build_Assert
@@ -4799,21 +4855,6 @@ package body Synth.Vhdl_Stmts is
       end if;
    end Synth_Psl_Assert_Directive;
 
-   procedure Synth_Psl_Endpoint_Declaration
-     (Syn_Inst : Synth_Instance_Acc; Stmt : Node)
-   is
-      pragma Unreferenced (Syn_Inst, Stmt);
-   begin
-      if not Flags.Flag_Formal then
-         return;
-      end if;
-
-      --  TODO
-      --  Mutate object to a net
-      --  Assign the net.
-      raise Internal_Error;
-   end Synth_Psl_Endpoint_Declaration;
-
    procedure Synth_Generate_Statement_Body
      (Syn_Inst : Synth_Instance_Acc; Bod : Node)
    is
@@ -4963,8 +5004,7 @@ package body Synth.Vhdl_Stmts is
          when Iir_Kind_Concurrent_Assertion_Statement =>
             --  Passive statement.
             Synth_Concurrent_Assertion_Statement (Syn_Inst, Stmt);
-         when others =>
-            Error_Kind ("synth_concurrent_statement", Stmt);
+         when others => Error_Kind ("synth_concurrent_statement", Stmt);
       end case;
 
       pragma Assert (Is_Expr_Pool_Empty);
@@ -5028,7 +5068,7 @@ package body Synth.Vhdl_Stmts is
          Base : Valtyp;
          Typ : Type_Acc;
       begin
-         Synth_Assignment_Prefix (Syn_Inst, Sig, Base, Typ, Off);
+         Synth_Object_Name (Syn_Inst, Sig, Base, Typ, Off);
          pragma Assert (Off = (0, 0));
          pragma Assert (Base.Val.Kind = Value_Wire);
          pragma Assert (Base.Typ = Typ);
@@ -5066,12 +5106,12 @@ package body Synth.Vhdl_Stmts is
                | Name_Gclk =>
                --  Applies to nets/ports.
                null;
+            when Name_Foreign =>
+               null;
             when others =>
                Warning_Msg_Synth
                  (Warnid_Unhandled_Attribute,
-                  +Spec,
-                  "unhandled attribute %i",
-                  (1 => +Id));
+                  +Spec, "unhandled attribute %i", (1 => +Id));
          end case;
          Val := Get_Value_Chain (Val);
       end loop;
@@ -5110,8 +5150,6 @@ package body Synth.Vhdl_Stmts is
                Synth_Psl_Restrict_Directive (Syn_Inst, Item);
             when Iir_Kind_Psl_Cover_Directive =>
                Synth_Psl_Cover_Directive (Syn_Inst, Item);
-            when Iir_Kind_Psl_Endpoint_Declaration =>
-               Synth_Psl_Endpoint_Declaration (Syn_Inst, Item);
             when Iir_Kind_Signal_Declaration
                | Iir_Kind_Constant_Declaration
                | Iir_Kind_Function_Declaration
@@ -5133,8 +5171,7 @@ package body Synth.Vhdl_Stmts is
                | Iir_Kind_Concurrent_Procedure_Call_Statement
                | Iir_Kind_Component_Instantiation_Statement =>
                Synth_Concurrent_Statement (Syn_Inst, Item);
-            when others =>
-               Error_Kind ("synth_verification_unit", Item);
+            when others => Error_Kind ("synth_verification_unit", Item);
          end case;
          Item := Get_Chain (Item);
       end loop;
@@ -5174,8 +5211,7 @@ package body Synth.Vhdl_Stmts is
                | Iir_Kind_Type_Declaration
                | Iir_Kind_Anonymous_Type_Declaration =>
                Finalize_Declaration (Syn_Inst, Item, False);
-            when others =>
-               Error_Kind ("synth_verification_unit(2)", Item);
+            when others => Error_Kind ("synth_verification_unit(2)", Item);
          end case;
          Item := Get_Chain (Item);
       end loop;

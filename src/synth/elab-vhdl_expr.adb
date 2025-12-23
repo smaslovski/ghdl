@@ -125,19 +125,10 @@ package body Elab.Vhdl_Expr is
       return Null_Node;
    end Find_Name_In_Declaration_Chain;
 
-   function Synth_Pathname_Object (Loc_Inst : Synth_Instance_Acc;
-                                   Name : Node;
-                                   Cur_Inst : Synth_Instance_Acc;
-                                   Path : Node) return Valtyp
+   function Find_Object_Name_In_Scope (Scope : Node; Id : Name_Id) return Node
    is
-      use Errorout;
-      Id : constant Name_Id := Get_Identifier (Path);
-      Scope : constant Node := Get_Source_Scope (Cur_Inst);
       Obj : Node;
-      Res : Valtyp;
-      Name_Typ : Type_Acc;
    begin
-      --  Object simple name.
       case Get_Kind (Scope) is
          when Iir_Kind_Generate_Statement_Body
            | Iir_Kind_Block_Statement
@@ -157,9 +148,42 @@ package body Elab.Vhdl_Expr is
                   end if;
                end;
             end if;
-         when others =>
-            Error_Kind ("synth_pathname_object(1)", Scope);
+         when others => Error_Kind ("synth_pathname_object(1)", Scope);
       end case;
+      return Obj;
+   end Find_Object_Name_In_Scope;
+
+   function Find_Stmt_Name_In_Scope (Scope : Node; Id : Name_Id) return Node
+   is
+      Res : Node;
+   begin
+      case Get_Kind (Scope) is
+         when Iir_Kind_Architecture_Body
+           | Iir_Kind_Block_Statement
+           | Iir_Kind_Generate_Statement_Body =>
+            Res := Find_Name_In_Chain
+              (Get_Concurrent_Statement_Chain (Scope), Id);
+         when Iir_Kind_Package_Declaration =>
+            Res := Find_Name_In_Declaration_Chain (Scope, Id);
+         when others => Error_Kind ("synth_pathname(scope)", Scope);
+      end case;
+      return Res;
+   end Find_Stmt_Name_In_Scope;
+
+   function Synth_Pathname_Object (Loc_Inst : Synth_Instance_Acc;
+                                   Name : Node;
+                                   Cur_Inst : Synth_Instance_Acc;
+                                   Path : Node) return Valtyp
+   is
+      use Errorout;
+      Id : constant Name_Id := Get_Identifier (Path);
+      Scope : constant Node := Get_Source_Scope (Cur_Inst);
+      Obj : Node;
+      Res : Valtyp;
+      Name_Typ : Type_Acc;
+   begin
+      --  Object simple name.
+      Obj := Find_Object_Name_In_Scope (Scope, Id);
 
       --  LRM08 8.7 External names
       --  It is an error when evaluating an external name if the identified
@@ -167,8 +191,15 @@ package body Elab.Vhdl_Expr is
       --  whose simple name is the object simple name of the external
       --  pathname.
       if Obj = Null_Node then
-         Error_Msg_Synth
-           (Loc_Inst, Path, "cannot find object %i in %i", (+Id, +Scope));
+         Obj := Find_Stmt_Name_In_Scope (Scope, Id);
+         if Obj /= Null_Node then
+            Error_Msg_Synth
+              (Loc_Inst, Path,
+              "last path element %i is not an object in %i", (+Id, +Scope));
+         else
+            Error_Msg_Synth
+              (Loc_Inst, Path, "cannot find object %i in %i", (+Id, +Scope));
+         end if;
          return No_Valtyp;
       end if;
 
@@ -177,44 +208,39 @@ package body Elab.Vhdl_Expr is
       --  denoted by an external constant name is not a constant, or if the
       --  object denoted by an external signal name is not a signal, or if
       --  the object denoted by an external variable name is not a variable.
-      case Get_Kind (Obj) is
-         when Iir_Kind_Signal_Declaration
-           | Iir_Kind_Interface_Signal_Declaration =>
-            case Iir_Kinds_External_Name (Get_Kind (Name)) is
-               when Iir_Kind_External_Signal_Name =>
+      case Iir_Kinds_External_Name (Get_Kind (Name)) is
+         when Iir_Kind_External_Signal_Name =>
+            case Get_Kind (Obj) is
+               when Iir_Kind_Signal_Declaration
+                 | Iir_Kind_Interface_Signal_Declaration =>
                   Res := Get_Value (Cur_Inst, Obj);
-               when Iir_Kind_External_Constant_Name
-                 | Iir_Kind_External_Variable_Name =>
+               when others =>
                   Error_Msg_Synth
                     (Loc_Inst, Path,
                      "denoted object name %i is a not a signal", +Obj);
                   return No_Valtyp;
             end case;
-         when Iir_Kind_Variable_Declaration =>
-            case Iir_Kinds_External_Name (Get_Kind (Name)) is
-               when Iir_Kind_External_Variable_Name =>
+         when Iir_Kind_External_Variable_Name =>
+            case Get_Kind (Obj) is
+               when Iir_Kind_Variable_Declaration =>
                   Res := Get_Value (Cur_Inst, Obj);
-               when Iir_Kind_External_Constant_Name
-                 | Iir_Kind_External_Signal_Name =>
+               when others =>
                   Error_Msg_Synth
                     (Loc_Inst, Path,
                      "denoted object name %i is a not a variable", +Obj);
                   return No_Valtyp;
             end case;
-         when Iir_Kind_Constant_Declaration
-           | Iir_Kind_Interface_Constant_Declaration =>
-            case Iir_Kinds_External_Name (Get_Kind (Name)) is
-               when Iir_Kind_External_Constant_Name =>
+         when Iir_Kind_External_Constant_Name =>
+            case Get_Kind (Obj) is
+               when Iir_Kind_Constant_Declaration
+                 | Iir_Kind_Interface_Constant_Declaration =>
                   Res := Get_Value (Cur_Inst, Obj);
-               when Iir_Kind_External_Variable_Name
-                 | Iir_Kind_External_Signal_Name =>
+               when others =>
                   Error_Msg_Synth
                     (Loc_Inst, Path,
                      "denoted object name %i is a not a constant", +Obj);
                   return No_Valtyp;
             end case;
-         when others =>
-            Error_Kind ("synth_pathname_object(2)", Obj);
       end case;
 
       --  LRM08 8.7 External names
@@ -278,8 +304,7 @@ package body Elab.Vhdl_Expr is
            | Type_File
            | Type_Access =>
             null;
-         when Type_Slice =>
-            raise Internal_Error;
+         when Type_Slice => raise Internal_Error;
       end case;
 
       return Res;
@@ -307,21 +332,18 @@ package body Elab.Vhdl_Expr is
       Scope := Get_Source_Scope (Cur_Inst);
 
       --  Find name in concurrent statements.
-      case Get_Kind (Scope) is
-         when Iir_Kind_Architecture_Body
-           | Iir_Kind_Block_Statement
-           | Iir_Kind_Generate_Statement_Body =>
-            Res := Find_Name_In_Chain
-              (Get_Concurrent_Statement_Chain (Scope), Id);
-         when Iir_Kind_Package_Declaration =>
-            Res := Find_Name_In_Declaration_Chain (Scope, Id);
-         when others =>
-            Error_Kind ("synth_pathname(scope)", Scope);
-      end case;
+      Res := Find_Stmt_Name_In_Scope (Scope, Id);
       if Res = Null_Node then
-         Error_Msg_Synth
-           (Loc_Inst, Path,
-            "cannot find path element %i in %i", (+Id, +Scope));
+         Res := Find_Object_Name_In_Scope (Scope, Id);
+         if Res /= Null_Node then
+            Error_Msg_Synth
+              (Loc_Inst, Suffix,
+              "cannot select a subelement of %i in an external name", +Res);
+         else
+            Error_Msg_Synth
+              (Loc_Inst, Path,
+              "cannot find path element %i in %i", (+Id, +Scope));
+         end if;
          return No_Valtyp;
       end if;
 
@@ -352,8 +374,7 @@ package body Elab.Vhdl_Expr is
             --  And other concurrent statements...
             --  and other declarations
             null;
-         when others =>
-            Error_Kind ("synth_pathname(2a)", Res);
+         when others => Error_Kind ("synth_pathname(2a)", Res);
       end case;
 
       case Get_Kind (Res) is
@@ -361,7 +382,7 @@ package body Elab.Vhdl_Expr is
             Sub_Inst := Get_Sub_Instance (Cur_Inst, Res);
             if not Is_Entity_Instantiation (Res) then
                Sub_Inst := Get_Component_Instance (Sub_Inst);
-               if Cur_Inst = null then
+               if Sub_Inst = null then
                   Error_Msg_Synth
                     (Loc_Inst, Path, "component for %i is not bound", +Res);
                   return No_Valtyp;
@@ -445,8 +466,7 @@ package body Elab.Vhdl_Expr is
                "pathname element %i does not denote a concurrent region",
                +Id);
             return No_Valtyp;
-         when others =>
-            Error_Kind ("synth_pathname(2)", Res);
+         when others => Error_Kind ("synth_pathname(2)", Res);
       end case;
       return Synth_Pathname (Loc_Inst, Name, Sub_Inst, Suffix);
    end Synth_Pathname;
@@ -523,8 +543,7 @@ package body Elab.Vhdl_Expr is
                end;
             when Iir_Kind_Vunit_Declaration =>
                return Get_Instance_Parent (Cur_Inst);
-            when others =>
-               Error_Kind ("exec_pathname_concurrent_region", Cur_Src);
+            when others => Error_Kind ("exec_pathname_conc_region", Cur_Src);
          end case;
          Cur_Inst := Get_Instance_Parent (Cur_Inst);
          pragma Assert (Cur_Inst /= null);
@@ -790,8 +809,7 @@ package body Elab.Vhdl_Expr is
                end if;
             end;
 
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
       return Create_Value_Discrete (Val, Dtype);
    end Value_Attribute;
@@ -872,8 +890,7 @@ package body Elab.Vhdl_Expr is
                  (Str, First, Ghdl_I64 (Read_Discrete (Val)));
                return Str (First .. Str'Last) & ' ' & Name_Table.Image (Id);
             end;
-         when others =>
-            Error_Kind ("synth_image_attribute_str", Expr_Type);
+         when others => Error_Kind ("synth_image_attribute_str", Expr_Type);
       end case;
    end Synth_Image_Attribute_Str;
 
@@ -917,14 +934,6 @@ package body Elab.Vhdl_Expr is
       return Create_Value_Memtyp (Res);
    end Exec_Instance_Name_Attribute;
 
-   procedure Check_Matching_Bounds (Syn_Inst : Synth_Instance_Acc;
-                                    L, R : Type_Acc; Loc : Node) is
-   begin
-      if not Are_Types_Equal (L, R) then
-         Error_Msg_Elab (Syn_Inst, Loc, "non matching bounds");
-      end if;
-   end Check_Matching_Bounds;
-
    --  Return the bounds of a one dimensional array/vector type and the
    --  width of the element.
    procedure Get_Onedimensional_Array_Bounds
@@ -936,8 +945,7 @@ package body Elab.Vhdl_Expr is
             pragma Assert (Typ.Alast);
             El_Typ := Typ.Arr_El;
             Bnd := Typ.Abound;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Get_Onedimensional_Array_Bounds;
 
@@ -961,8 +969,7 @@ package body Elab.Vhdl_Expr is
             pragma Assert (Btyp.Ulast);
             pragma Assert (Is_Bounded_Type (El_Typ));
             Res := Create_Array_Type (Bnd, False, True, El_Typ);
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
       return Res;
    end Create_Onedimensional_Array_Subtype;
@@ -1062,6 +1069,9 @@ package body Elab.Vhdl_Expr is
                return Val.Typ;
             end;
 
+         when Iir_Kind_Subtype_Attribute =>
+            return Exec_Name_Subtype (Syn_Inst, Get_Prefix (Name));
+
          when Iir_Kind_Element_Attribute =>
             declare
                Pfx : Type_Acc;
@@ -1070,8 +1080,7 @@ package body Elab.Vhdl_Expr is
                return Pfx.Arr_El;
             end;
 
-         when others =>
-            Error_Kind ("exec_name_subtype", Name);
+         when others => Error_Kind ("exec_name_subtype", Name);
       end case;
    end Exec_Name_Subtype;
 
@@ -1103,8 +1112,7 @@ package body Elab.Vhdl_Expr is
             | Type_Unbounded_Array =>
             Bounds := Synth_Bounds_From_Length
               (Get_Index_Type (Str_Type, 0), Len);
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
 
       El_Type := Get_Array_Element (Str_Typ);
@@ -1220,9 +1228,8 @@ package body Elab.Vhdl_Expr is
                end if;
                Prepend (Rstr, Image (Get_Label (Stmt)));
                Prepend (Rstr, ':');
-            when others =>
-               Error_Kind ("Exec_Path_Instance_Name_Attribute",
-                           Label);
+            when others => Error_Kind ("Exec_Path_Instance_Name_Attribute",
+                                       Label);
          end case;
          Instance := Parent;
       end loop;
