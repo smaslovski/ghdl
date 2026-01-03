@@ -35,8 +35,6 @@ with Netlists.Concats;
 with Netlists.Folds; use Netlists.Folds;
 with Netlists.Locations; use Netlists.Locations;
 
-with Elab.Vhdl_Objtypes; use Elab.Vhdl_Objtypes;
-with Elab.Vhdl_Values; use Elab.Vhdl_Values;
 
 with Vhdl.Utils; use Vhdl.Utils;
 with Vhdl.Errors;
@@ -45,6 +43,8 @@ with Vhdl.Ieee.Math_Real;
 with Vhdl.Std_Package;
 
 with Elab.Memtype; use Elab.Memtype;
+with Elab.Vhdl_Objtypes; use Elab.Vhdl_Objtypes;
+with Elab.Vhdl_Values; use Elab.Vhdl_Values;
 with Elab.Vhdl_Files;
 with Elab.Debugger;
 with Elab.Vhdl_Errors;
@@ -214,6 +214,10 @@ package body Synth.Vhdl_Insts is
          when Type_Bit
            | Type_Logic =>
             null;
+         when Type_Discrete =>
+            Hash_Uns64 (C, Direction_Type'Pos (Typ.Drange.Dir));
+            Hash_Uns64 (C, To_Uns64 (Typ.Drange.Left));
+            Hash_Uns64 (C, To_Uns64 (Typ.Drange.Right));
          when others => raise Internal_Error;
       end case;
    end Hash_Bounds;
@@ -598,6 +602,8 @@ package body Synth.Vhdl_Insts is
       Hash => Hash,
       Build => Build,
       Equal => Equal);
+
+   Next_Synth_Instance : Insts_Interning.Index_Type;
 
    function Is_Arch_Black_Box (Inst : Synth_Instance_Acc; Arch : Node)
                               return Boolean
@@ -1587,35 +1593,50 @@ package body Synth.Vhdl_Insts is
       end loop;
    end Synth_Dependencies;
 
-   procedure Synth_Top_Entity (Base : Base_Instance_Acc;
-                               Design_Unit : Node;
-                               Encoding : Name_Encoding;
-                               Syn_Inst : Synth_Instance_Acc)
+   procedure Set_Base_Instance (Base : Base_Instance_Acc)
    is
-      Config : constant Node := Get_Library_Unit (Design_Unit);
-      Arch : Node;
-      Entity : Node;
-      Inst_Obj : Inst_Object;
+      use Insts_Interning;
    begin
-      --  Extract architecture from design.
-      Arch := Get_Named_Entity
-        (Get_Block_Specification (Get_Block_Configuration (Config)));
-      Entity := Get_Entity (Arch);
-
-      Make_Base_Instance (Base);
+      Vhdl_Context.Set_Base_Instance (Base);
 
       Global_Base_Instance := Base;
 
       Insts_Interning.Init;
 
+      Next_Synth_Instance := First_Index;
+   end Set_Base_Instance;
+
+   procedure Free_Base_Instance is
+   begin
+      Vhdl_Context.Free_Extra;
+      Global_Base_Instance := null;
+      Elab.Vhdl_Context.Free_Base_Instance;
+      Insts_Interning.Free;
+   end Free_Base_Instance;
+
+   function Synth_Top_Entity (Design_Unit : Node;
+                              Encoding : Name_Encoding;
+                              Syn_Inst : Synth_Instance_Acc)
+                             return Synth_Instance_Acc
+   is
+      Config : constant Node := Get_Library_Unit (Design_Unit);
+      Blk_Conf : constant Node := Get_Block_Configuration (Config);
+      Arch : Node;
+      Entity : Node;
+      Inst_Obj : Inst_Object;
+   begin
       if Flags.Flag_Debug_Init then
          Elab.Debugger.Debug_Elab (Syn_Inst);  -- GCOV_EXCL_LINE
       end if;
 
       pragma Assert (Is_Expr_Pool_Empty);
 
-      Set_Extra
-        (Syn_Inst, Base, New_Sname_User (Get_Identifier (Entity), No_Sname));
+      --  Extract architecture from design.
+      Arch := Get_Named_Entity (Get_Block_Specification (Blk_Conf));
+      Entity := Get_Entity (Arch);
+
+      Set_Extra (Syn_Inst, Global_Base_Instance,
+                 New_Sname_User (Get_Identifier (Entity), No_Sname));
 
       --  Search if corresponding module has already been used.
       --  If not create a new module
@@ -1625,12 +1646,13 @@ package body Synth.Vhdl_Insts is
       Inst_Obj := Insts_Interning.Get
         ((Decl => Entity,
           Arch => Arch,
-          Config => Get_Block_Configuration (Config),
+          Config => Blk_Conf,
           Syn_Inst => Syn_Inst,
           Encoding => Encoding));
-      pragma Unreferenced (Inst_Obj);
 
       pragma Assert (Is_Expr_Pool_Empty);
+
+      return Inst_Obj.Syn_Inst;
    end Synth_Top_Entity;
 
    procedure Create_Input_Wire (Syn_Inst : Synth_Instance_Acc;
@@ -1914,10 +1936,11 @@ package body Synth.Vhdl_Insts is
       use Insts_Interning;
       Idx : Index_Type;
    begin
-      Idx := First_Index;
+      Idx := Next_Synth_Instance;
       while Idx <= Last_Index loop
          Synth_Instance (Get_By_Index (Idx));
          Idx := Idx + 1;
       end loop;
+      Next_Synth_Instance := Last_Index + 1;
    end Synth_All_Instances;
 end Synth.Vhdl_Insts;

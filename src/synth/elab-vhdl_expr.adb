@@ -920,20 +920,6 @@ package body Elab.Vhdl_Expr is
       return Create_Value_Memtyp (Res);
    end Exec_Image_Attribute;
 
-   function Exec_Instance_Name_Attribute
-     (Syn_Inst : Synth_Instance_Acc; Attr : Node) return Valtyp
-   is
-      Atype : constant Node := Get_Type (Attr);
-      Atyp  : constant Type_Acc := Get_Subtype_Object (Syn_Inst, Atype);
-      Name  : constant Path_Instance_Name_Type :=
-        Get_Path_Instance_Name_Suffix (Attr);
-      Res : Memtyp;
-   begin
-      --  Return a truncated name, as the prefix is not completly known.
-      Res := String_To_Memtyp (Name.Suffix, Atyp);
-      return Create_Value_Memtyp (Res);
-   end Exec_Instance_Name_Attribute;
-
    --  Return the bounds of a one dimensional array/vector type and the
    --  width of the element.
    procedure Get_Onedimensional_Array_Bounds
@@ -1053,7 +1039,8 @@ package body Elab.Vhdl_Expr is
             end;
 
          when Iir_Kind_Enumeration_Literal
-            | Iir_Kind_Unit_Declaration =>
+            | Iir_Kind_Unit_Declaration
+            | Iir_Kind_Character_Literal =>
             return Get_Subtype_Object (Syn_Inst, Get_Type (Name));
 
          when Iir_Kind_String_Literal8 =>
@@ -1169,11 +1156,6 @@ package body Elab.Vhdl_Expr is
          Stmt := Get_Statement_Scope (Instance);
 
          case Get_Kind (Label) is
-            when Iir_Kind_Entity_Declaration =>
-               if Parent = null then
-                  Prepend (Rstr, Image (Get_Identifier (Label)));
-                  exit;
-               end if;
             when Iir_Kind_Architecture_Body =>
                if Is_Instance then
                   Prepend (Rstr, ')');

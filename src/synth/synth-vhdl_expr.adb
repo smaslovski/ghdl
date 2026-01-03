@@ -2212,11 +2212,11 @@ package body Synth.Vhdl_Expr is
       case Get_Kind (Expr) is
          when Iir_Kinds_Dyadic_Operator =>
             declare
-               Imp : constant Node := Get_Implementation (Expr);
-               Def : constant Iir_Predefined_Functions :=
-                 Get_Implicit_Definition (Imp);
+               Imp : Node;
+               Def : Iir_Predefined_Functions;
                Edge : Net;
             begin
+               Get_Subprogram_Implementation (Syn_Inst, Expr, Imp, Def);
                --  Match clock-edge (only for synthesis)
                if Def = Iir_Predefined_Boolean_And
                  and then Hook_Signal_Expr = null
@@ -2279,10 +2279,10 @@ package body Synth.Vhdl_Expr is
             end;
          when Iir_Kinds_Monadic_Operator =>
             declare
-               Imp : constant Node := Get_Implementation (Expr);
-               Def : constant Iir_Predefined_Functions :=
-                 Get_Implicit_Definition (Imp);
+               Imp : Node;
+               Def : Iir_Predefined_Functions;
             begin
+               Get_Subprogram_Implementation (Syn_Inst, Expr, Imp, Def);
                if Def = Iir_Predefined_None then
                   if Error_Ieee_Operator (Syn_Inst, Imp, Expr) then
                      --  GCOV_EXCL_START
@@ -2458,22 +2458,10 @@ package body Synth.Vhdl_Expr is
          when Iir_Kind_Function_Call =>
             declare
                Imp : Node;
+               Def : Iir_Predefined_Functions;
             begin
-               Imp := Get_Implementation (Expr);
-               --  For instantiations.
-               loop
-                  case Get_Kind (Imp) is
-                     when Iir_Kind_Interface_Function_Declaration =>
-                        Imp := Get_Interface_Subprogram (Syn_Inst, Imp);
-                     when Iir_Kind_Function_Declaration =>
-                        exit;
-                     when Iir_Kind_Function_Instantiation_Declaration =>
-                        return Synth_User_Function_Call (Syn_Inst, Expr, Imp);
-                     when others => Error_Kind ("function_call", Imp);
-                  end case;
-               end loop;
-
-               case Get_Implicit_Definition (Imp) is
+               Get_Subprogram_Implementation (Syn_Inst, Expr, Imp, Def);
+               case Def is
                   when Iir_Predefined_Operators
                      | Iir_Predefined_Ieee_Numeric_Std_Binary_Operators
                      | Iir_Predefined_Ieee_Numeric_Std_Unsigned_Operators =>
@@ -2763,6 +2751,7 @@ package body Synth.Vhdl_Expr is
       case Get_Kind (Expr) is
          when Iir_Kind_Simple_Name
             | Iir_Kind_Indexed_Name
+            | Iir_Kind_Slice_Name
             | Iir_Kind_Selected_Element
             | Iir_Kind_Integer_Literal
             | Iir_Kind_String_Literal8

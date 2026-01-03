@@ -90,7 +90,6 @@ package Elab.Vhdl_Context is
    function Get_Instance_Parent (Inst : Synth_Instance_Acc)
                                 return Synth_Instance_Acc;
 
-   procedure Set_Instance_Config (Inst : Synth_Instance_Acc; Config : Node);
    function Get_Instance_Config (Inst : Synth_Instance_Acc) return Node;
 
    procedure Set_Instance_Foreign (Inst : Synth_Instance_Acc; N : Int32);
@@ -217,8 +216,18 @@ package Elab.Vhdl_Context is
                                  Typ : out Type_Acc;
                                  Def : out Node);
 
+   --  Low-level function to get the subprogram associated to an
+   --  interface subprogram.  Use Get_Subprogeam_Implementation.
    function Get_Interface_Subprogram (Syn_Inst : Synth_Instance_Acc;
                                       Decl : Node) return Node;
+
+   --  Utility to return the real implementation for CALL.
+   --  Handle interface subprograms.
+   procedure Get_Subprogram_Implementation
+     (Syn_Inst : Synth_Instance_Acc;
+      Call : Node;
+      Imp : out Node;
+      Def : out Iir_Predefined_Functions);
 
    function Get_Sub_Instance
      (Syn_Inst : Synth_Instance_Acc; Stmt : Node) return Synth_Instance_Acc;

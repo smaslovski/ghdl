@@ -29,6 +29,8 @@ package Grt.Severity is
    Error_Severity   : constant Integer := 2;
    Failure_Severity : constant Integer := 3;
 
+   subtype Severity_Level is Natural range Note_Severity .. Failure_Severity;
+
    --  Value returned by Parse_Severity for 'none'.
    None_Severity    : constant Integer := 4;
 end Grt.Severity;

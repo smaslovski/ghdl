@@ -69,6 +69,7 @@ package body Elab.Vhdl_Objtypes is
       end if;
 
       case L.Kind is
+         --  GCOV_EXCL_START (used only on types derived from unbounded types)
          when Type_Bit
            | Type_Logic =>
             return True;
@@ -76,6 +77,22 @@ package body Elab.Vhdl_Objtypes is
             return L.Drange = R.Drange;
          when Type_Float =>
             return L.Frange = R.Frange;
+         when Type_Access =>
+            return Are_Types_Equal (L.Acc_Acc, R.Acc_Acc);
+         when Type_File =>
+            return Are_Types_Equal (L.File_Typ, R.File_Typ);
+         when Type_Protected =>
+            return False;
+         when Type_Slice =>
+            return Are_Types_Equal (L.Slice_El, R.Slice_El);
+         when Type_Unbounded_Array
+            | Type_Unbounded_Vector =>
+            if L.Ulast /= R.Ulast then
+               return False;
+            end if;
+            --  Also check index ?
+            return Are_Types_Equal (L.Uarr_El, R.Uarr_El);
+         --  GCOV_EXCL_STOP
          when Type_Array
             | Type_Array_Unbounded
             | Type_Vector =>
@@ -86,15 +103,6 @@ package body Elab.Vhdl_Objtypes is
                return False;
             end if;
             return Are_Types_Equal (L.Arr_El, R.Arr_El);
-         when Type_Unbounded_Array
-            | Type_Unbounded_Vector =>
-            if L.Ulast /= R.Ulast then
-               return False;
-            end if;
-            --  Also check index ?
-            return Are_Types_Equal (L.Uarr_El, R.Uarr_El);
-         when Type_Slice =>
-            return Are_Types_Equal (L.Slice_El, R.Slice_El);
          when Type_Record
            | Type_Unbounded_Record =>
             if L.Rec.Len /= R.Rec.Len then
@@ -106,12 +114,6 @@ package body Elab.Vhdl_Objtypes is
                end if;
             end loop;
             return True;
-         when Type_Access =>
-            return Are_Types_Equal (L.Acc_Acc, R.Acc_Acc);
-         when Type_File =>
-            return Are_Types_Equal (L.File_Typ, R.File_Typ);
-         when Type_Protected =>
-            return False;
       end case;
    end Are_Types_Equal;
 
@@ -140,6 +142,16 @@ package body Elab.Vhdl_Objtypes is
       end case;
    end Is_Null_Range;
 
+   function Is_Null_Float_Range (Rng : Float_Range_Type) return Boolean is
+   begin
+      case Rng.Dir is
+         when Dir_To =>
+            return Rng.Left > Rng.Right;
+         when Dir_Downto =>
+            return Rng.Left < Rng.Right;
+      end case;
+   end Is_Null_Float_Range;
+
    function Is_Scalar_Subtype_Compatible (L, R : Type_Acc) return Boolean is
    begin
       pragma Assert (L.Kind = R.Kind);
@@ -155,7 +167,11 @@ package body Elab.Vhdl_Objtypes is
             return In_Range (R.Drange, L.Drange.Left)
               and then In_Range (R.Drange, L.Drange.Right);
          when Type_Float =>
-            return L.Frange = R.Frange;
+            if Is_Null_Float_Range (L.Frange) then
+               return True;
+            end if;
+            return In_Float_Range (R.Frange, L.Frange.Left)
+              and then In_Float_Range (R.Frange, L.Frange.Right);
          when others => raise Internal_Error;
       end case;
    end Is_Scalar_Subtype_Compatible;

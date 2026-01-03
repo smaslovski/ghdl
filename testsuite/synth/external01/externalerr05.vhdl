@@ -50,5 +50,6 @@ begin
               rst => rst,
               a => a,
               o => o);
+  --  Bad kind: not a signal
   accum <= << signal .externalerr05.dut.accum : std_logic_vector(7 downto 0) >>;
 end behav;

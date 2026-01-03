@@ -21,13 +21,11 @@ with Ada.Unchecked_Conversion;
 
 with Types; use Types;
 with Tables;
-
 with Libraries;
 
 with Vhdl.Nodes; use Vhdl.Nodes;
 with Vhdl.Errors; use Vhdl.Errors;
 with Vhdl.Utils; use Vhdl.Utils;
-with Vhdl.Back_End;
 with Vhdl.Configuration;
 with Vhdl.Std_Package;
 with Vhdl.Ieee.Std_Logic_1164;
@@ -55,7 +53,7 @@ with Trans.Chap4;
 with Trans.Chap9;
 with Trans.Rtis;
 with Trans_Link;
-with Trans_Foreign;
+with Trans_Foreign_Jit;
 with Trans_Decls;
 with Trans.Coverage;
 
@@ -271,6 +269,18 @@ package body Simul.Vhdl_Compile is
       end if;
    end Build_Scalar_Subtype_Range;
 
+   procedure Build_Float_Subtype_Range (Mem : Memory_Ptr;
+                                         Def : Node;
+                                         Typ : Type_Acc)
+   is
+      Tinfo : constant Type_Info_Acc := Get_Info (Def);
+      Rng : Float_Range_Type renames Typ.Frange;
+   begin
+      Write_Fp64 (Add_Field_Offset (Mem, Tinfo.B.Range_Left), Rng.Left);
+      Write_Fp64 (Add_Field_Offset (Mem, Tinfo.B.Range_Right), Rng.Right);
+      Write_Dir (Add_Field_Offset (Mem, Tinfo.B.Range_Dir), Rng.Dir);
+   end Build_Float_Subtype_Range;
+
    procedure Build_Composite_Subtype_Layout (Mem : Memory_Ptr;
                                              Def : Node;
                                              Typ : Type_Acc);
@@ -434,8 +444,7 @@ package body Simul.Vhdl_Compile is
             null;
          when Iir_Kind_Integer_Subtype_Definition
             | Iir_Kind_Enumeration_Subtype_Definition
-            | Iir_Kind_Physical_Subtype_Definition
-            | Iir_Kind_Floating_Subtype_Definition =>
+            | Iir_Kind_Physical_Subtype_Definition =>
             if Get_Type_Staticness (Def) = Locally then
                return;
             end if;
@@ -446,6 +455,19 @@ package body Simul.Vhdl_Compile is
                if not Info.S.Same_Range then
                   Rng_Mem := Get_Var_Mem (Mem, Info.S.Range_Var);
                   Build_Scalar_Subtype_Range (Rng_Mem, Def, Typ);
+               end if;
+            end;
+         when Iir_Kind_Floating_Subtype_Definition =>
+            if Get_Type_Staticness (Def) = Locally then
+               return;
+            end if;
+            declare
+               Info : constant Type_Info_Acc := Get_Info (Def);
+               Rng_Mem : Memory_Ptr;
+            begin
+               if not Info.S.Same_Range then
+                  Rng_Mem := Get_Var_Mem (Mem, Info.S.Range_Var);
+                  Build_Float_Subtype_Range (Rng_Mem, Def, Typ);
                end if;
             end;
          when Iir_Kind_Array_Subtype_Definition =>
@@ -2071,19 +2093,6 @@ package body Simul.Vhdl_Compile is
    procedure Def (Decl : O_Dnode; Addr : System.Address)
      renames Ortho_Jit.Set_Address;
 
-   procedure Foreign_Hook (Decl : Iir;
-                           Info : Vhdl.Back_End.Foreign_Info_Type;
-                           Ortho : O_Dnode)
-   is
-      use System;
-      Res : Address;
-   begin
-      Res := Trans_Foreign.Get_Foreign_Address (Decl, Info);
-      if Res /= Null_Address then
-         Def (Ortho, Res);
-      end if;
-   end Foreign_Hook;
-
    procedure Disp_Process_Name (Stream : Grt.Stdio.FILEs;
                                 Proc : Grt.Signals.Process_Acc)
    is
@@ -2112,8 +2121,8 @@ package body Simul.Vhdl_Compile is
    begin
       Ortho_Jit.Init;
 
-      Translation.Foreign_Hook := Foreign_Hook'Access;
-      Trans_Foreign.Init;
+      Translation.Foreign_Hook := Trans_Foreign_Jit.Foreign_Hook'Access;
+      Trans_Foreign_Jit.Init;
 
       Translation.Initialize;
 
