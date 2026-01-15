@@ -1,5 +1,5 @@
 --  GHDL Run Time (GRT) -  asserts subprograms.
---  Copyright (C) 2025 Tristan Gingold
+--  Copyright (C) 2026 Tristan Gingold
 --
 --  This program is free software: you can redistribute it and/or modify
 --  it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@
 --  covered by the GNU Public License.
 
 package body Grt.Asserts is
-   type Natural_Array is array (Natural range <>) of Std_Integer;
+   type Natural_Array is array (Ghdl_E8 range <>) of Std_Integer;
    Assert_Count : Natural_Array (Severity_Level) := (others => 0);
 
    procedure Inc_Assert_Count (Level : Severity_Level) is

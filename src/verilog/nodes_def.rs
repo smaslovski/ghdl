@@ -1170,7 +1170,7 @@ impl Kind {
     }
 
     fn is_terminal_or_connection(self: Self) -> bool {
-        self >= Kind::Control_Terminal && self <= Kind::Wildcard_Connection
+        self >= Kind::Control_Terminal && self <= Kind::Implicit_Connection
     }
 
     fn is_case(self: Self) -> bool {
@@ -2810,6 +2810,12 @@ extern "C" {
 
     #[link_name = "verilog__nodes__set_instantiated_flag"]
     fn set_instantiated_flag(n: Node, v: bool);
+
+    #[link_name = "verilog__nodes__get_blackbox_flag"]
+    fn get_blackbox_flag(n: Node) -> bool;
+
+    #[link_name = "verilog__nodes__set_blackbox_flag"]
+    fn set_blackbox_flag(n: Node, v: bool);
 
     #[link_name = "verilog__nodes__get_ansi_port_flag"]
     fn get_ansi_port_flag(n: Node) -> bool;
@@ -4836,6 +4842,14 @@ impl Node {
 
     pub fn set_instantiated_flag(self: Self, v : bool) {
         unsafe { set_instantiated_flag(self, v); }
+    }
+
+    pub fn blackbox_flag(self: Self) -> bool {
+        unsafe { get_blackbox_flag(self) }
+    }
+
+    pub fn set_blackbox_flag(self: Self, v : bool) {
+        unsafe { set_blackbox_flag(self, v); }
     }
 
     pub fn ansi_port_flag(self: Self) -> bool {

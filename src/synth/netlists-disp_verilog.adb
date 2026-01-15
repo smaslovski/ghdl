@@ -24,7 +24,6 @@ with Netlists.Utils; use Netlists.Utils;
 with Netlists.Iterators; use Netlists.Iterators;
 with Netlists.Gates; use Netlists.Gates;
 with Netlists.Locations;
-with Netlists.Dump; use Netlists.Dump;
 with Netlists.Disp_Common; use Netlists.Disp_Common;
 
 package body Netlists.Disp_Verilog is
@@ -54,7 +53,7 @@ package body Netlists.Disp_Verilog is
       Disp_Common.Disp_Net_Name (N, Language_Verilog);
    end Disp_Net_Name;
 
-   procedure Disp_Pval (Pv : Pval)
+   procedure Disp_Pval_Vector (Pv : Pval)
    is
       Pvlen : constant Uns32 := Get_Pval_Length (Pv);
    begin
@@ -66,7 +65,7 @@ package body Netlists.Disp_Verilog is
          Wr ("'b");
          Disp_Pval_Binary_Digits (Pv);
       end if;
-   end Disp_Pval;
+   end Disp_Pval_Vector;
 
    --  If DRV drives a single Id_Nop return the output of the Nop gate.
    --  This gate is used to simple rename the output.
@@ -160,11 +159,13 @@ package body Netlists.Disp_Verilog is
                when Param_Pval_String =>
                   Disp_Pval_String (Get_Param_Pval (Inst, P - 1));
                when Param_Pval_Vector
-                 | Param_Pval_Integer
-                 | Param_Pval_Real
                  | Param_Pval_Time_Ps
                  | Param_Pval_Boolean =>
-                  Disp_Pval (Get_Param_Pval (Inst, P - 1));
+                  Disp_Pval_Vector (Get_Param_Pval (Inst, P - 1));
+               when Param_Pval_Integer =>
+                  Disp_Pval_Integer (Get_Param_Pval (Inst, P - 1));
+               when Param_Pval_Real =>
+                  Disp_Pval_Fp64 (Get_Param_Pval (Inst, P - 1));
                when Param_Invalid =>
                   Wr ("*invalid*");
             end case;
@@ -319,8 +320,7 @@ package body Netlists.Disp_Verilog is
             Disp_Const_Log (Inst);
          when Id_Extract =>
             Disp_Extract (Inst);
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
    end Disp_Constant_Inline;
 
@@ -360,8 +360,7 @@ package body Netlists.Disp_Verilog is
          when Id_Const_X =>
             Zx := 1;
             Val := 1;
-         when others =>
-            raise Internal_Error;
+         when others => raise Internal_Error;
       end case;
       Wr (Bchar (Zx * 2 + Val));
    end Disp_Const_Bit;
@@ -445,9 +444,7 @@ package body Netlists.Disp_Verilog is
                Wr ("$signed(");
                Disp_Constant_Inline (Net_Inst);
                Wr (")");
-            when Conv_Edge =>
-               --  Not expected: a constant is not an edge.
-               raise Internal_Error;
+            when Conv_Edge => raise Internal_Error; --  Not expected
          end case;
       else
          case Conv is
@@ -538,16 +535,13 @@ package body Netlists.Disp_Verilog is
                         Wr_Uns32 (V);
                      when Conv_Signed =>
                         Wr_Int32 (To_Int32 (V));
-                     when Conv_Edge
-                       | Conv_Const =>
-                        raise Internal_Error;
+                     when Conv_Edge | Conv_Const => raise Internal_Error;
                   end case;
                when 'l' =>
                   pragma Assert (Idx = 0);
                   pragma Assert (Conv = Conv_None);
                   Put_Name (Get_Instance_Name (Inst));
-               when others =>
-                  raise Internal_Error;
+               when others => raise Internal_Error;
             end case;
 
             I := I + 2;
@@ -595,7 +589,7 @@ package body Netlists.Disp_Verilog is
                when Param_Pval_String =>
                   Disp_Pval_String (Val);
                when others =>
-                  Disp_Pval (Val);
+                  Disp_Pval_Vector (Val);
             end case;
             Attr := Get_Attribute_Next (Attr);
             exit when Attr = No_Attribute;
@@ -641,8 +635,7 @@ package body Netlists.Disp_Verilog is
             when Id_Memory
               | Id_Memory_Init =>
                exit;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
          Port := Get_Output (Port_Inst, 0);
       end loop;
@@ -705,8 +698,7 @@ package body Netlists.Disp_Verilog is
             when Id_Memory
               | Id_Memory_Init =>
                exit;
-            when others =>
-               raise Internal_Error;
+            when others => raise Internal_Error;
          end case;
          Port := Get_Output (Port_Inst, 0);
       end loop;
@@ -825,25 +817,7 @@ package body Netlists.Disp_Verilog is
                  ("  assign \o0 = \i0 * \p0;" & NL, Inst, (0 => Step));
             end;
          when Id_Addidx =>
-            declare
-               W0 : constant Width := Get_Width (Get_Input_Net (Inst, 0));
-               W1 : constant Width := Get_Width (Get_Input_Net (Inst, 1));
-            begin
-               if W0 > W1 then
-                  Disp_Template
-                    ("  \o0 <= std_logic_vector (\ui0 + resize(\ui1, \n0));"
-                       & NL, Inst, (0 => W0));
-               elsif W0 < W1 then
-                  Disp_Template
-                    ("  \o0 <= std_logic_vector (resize (\ui0, \n0) + \ui1);"
-                       & NL, Inst, (0 => W1));
-               else
-                  pragma Assert (W0 = W1);
-                  Disp_Template
-                    ("  \o0 <= std_logic_vector (\ui0 + \ui1);"
-                       & NL, Inst);
-               end if;
-            end;
+            Disp_Template ("  \o0 <= \i0 + \i1;" & NL, Inst);
          when Id_Dyn_Extract =>
             declare
                O : constant Net := Get_Output (Inst, 0);
@@ -1211,8 +1185,7 @@ package body Netlists.Disp_Verilog is
                         when Id_Nop =>
                            --  Used for renaming
                            null;
-                        when others =>
-                           raise Internal_Error;
+                        when others => raise Internal_Error;
                      end case;
                   end if;
 

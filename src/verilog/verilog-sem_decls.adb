@@ -79,6 +79,7 @@ package body Verilog.Sem_Decls is
                pragma Assert (not Get_Type_Owner (Parent));
                exit;
             when N_Name
+              | N_Enum_Type
               | N_Scoped_Name
               | N_Packed_Array =>
                pragma Assert (Get_Type_Owner (Parent));
@@ -177,6 +178,7 @@ package body Verilog.Sem_Decls is
       end if;
 
       --  IEEE1364-2005 4.10.1 Module parameters
+      --  IEEE1800-2017 6.20.2 Value parameters
       --  - A parameter with a range specification, but with no type
       --    specification, shall be (of ??) the range of the parameter
       --    declaration and shall be unsigned.  The sign and range shall not

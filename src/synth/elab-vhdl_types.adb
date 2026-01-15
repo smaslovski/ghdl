@@ -755,11 +755,8 @@ package body Elab.Vhdl_Types is
                Parent_Typ : constant Type_Acc :=
                  Get_Subtype_Object (Syn_Inst, Parent_Type);
             begin
-               if Parent_Typ = null then
-                  Elab.Vhdl_Errors.Error_Msg_Elab
-                    (Syn_Inst, Atype, "base type is not yet elaborated");
-                  raise Elab.Vhdl_Errors.Elaboration_Error;
-               end if;
+               --  Base type must have been elaborated
+               pragma Assert (Parent_Typ /= null);
                return Synth_Array_Subtype_Indication
                  (Syn_Inst, Parent_Typ, Atype);
             end;
@@ -769,11 +766,8 @@ package body Elab.Vhdl_Types is
                Parent_Typ : constant Type_Acc :=
                  Get_Subtype_Object (Syn_Inst, Parent_Type);
             begin
-               if Parent_Typ = null then
-                  Elab.Vhdl_Errors.Error_Msg_Elab
-                    (Syn_Inst, Atype, "base type is not yet elaborated");
-                  raise Elab.Vhdl_Errors.Elaboration_Error;
-               end if;
+               --  Base type must have been elaborated
+               pragma Assert (Parent_Typ /= null);
                return Synth_Record_Type_Definition
                  (Syn_Inst, Parent_Typ, Atype);
             end;
@@ -819,17 +813,12 @@ package body Elab.Vhdl_Types is
                  (Syn_Inst, Get_Designated_Type (Atype));
                return Create_Access_Type (Parent_Typ, Acc_Typ, False);
             end;
-         when Iir_Kind_File_Subtype_Definition =>
-            --  Same as parent.
-            declare
-               Parent_Type : constant Node := Get_Parent_Type (Atype);
-            begin
-               return Get_Subtype_Object (Syn_Inst, Parent_Type);
-            end;
          when Iir_Kind_Record_Type_Definition
            | Iir_Kind_Array_Type_Definition
            | Iir_Kind_Enumeration_Type_Definition =>
             return Get_Subtype_Object (Syn_Inst, Atype);
+         when Iir_Kind_File_Subtype_Definition => raise Internal_Error;
+            --  Can only be an 'alias' subtype.
          when others => Error_Kind ("synth_subtype_indication", Atype);
       end case;
    end Synth_Subtype_Indication;
@@ -902,8 +891,6 @@ package body Elab.Vhdl_Types is
                      Atype2 := Get_Subtype_Indication (Decl);
                   when Iir_Kind_Interface_Type_Declaration =>
                      Atype2 := Get_Interface_Type_Definition (Decl);
-                  when Iir_Kind_Anonymous_Type_Declaration =>
-                     raise Internal_Error;
                   when others => raise Internal_Error;
                end case;
                return Get_Elaborated_Subtype_Indication (Syn_Inst, Atype2);

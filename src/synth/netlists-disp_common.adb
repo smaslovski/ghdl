@@ -1,5 +1,5 @@
 --  Routine to disp net names.
---  Copyright (C) 2025 Tristan Gingold
+--  Copyright (C) 2026 Tristan Gingold
 --
 --  This file is part of GHDL.
 --
@@ -18,14 +18,32 @@
 
 with Name_Table;
 with Outputs; use Outputs;
+with Types_Utils;
+
+with Grt.Types;
+with Grt.Fcvt;
 
 with Netlists.Gates; use Netlists.Gates;
 with Netlists.Utils;
 
 package body Netlists.Disp_Common is
-   procedure Put_Id (N : Name_Id) is
+   procedure Put_Id (N : Name_Id; Lang : Language_Range; Is_Extended : Boolean)
+   is
+      Img : constant String := Name_Table.Image (N);
    begin
-      Wr (Name_Table.Image (N));
+      if Is_Extended then
+         --  Name N is printed within an extended identifier.
+         case Lang is
+            when Language_Vhdl
+              | Language_Verilog =>
+               if Img (Img'First) = '\' then
+                  Wr (Img (Img'First + 1 .. Img'Last - 1));
+                  return;
+               end if;
+         end case;
+      end if;
+
+      Wr (Img);
    end Put_Id;
 
    procedure Put_Name_Version (N : Sname) is
@@ -53,7 +71,8 @@ package body Netlists.Disp_Common is
       end case;
    end Is_Extended_Sname;
 
-   procedure Put_Name_Inner (N : Sname)
+   procedure Put_Name_Inner
+     (N : Sname; Lang : Language_Range; Is_Extended : Boolean)
    is
       Kind : constant Sname_Kind := Get_Sname_Kind (N);
       Prefix : Sname;
@@ -67,7 +86,7 @@ package body Netlists.Disp_Common is
       if Kind in Sname_Kind_Prefix then
          Prefix := Get_Sname_Prefix (N);
          if Prefix /= No_Sname then
-            Put_Name_Inner (Prefix);
+            Put_Name_Inner (Prefix, Lang, Is_Extended);
             if Kind /= Sname_Field then
                Wr ("_");
             end if;
@@ -76,12 +95,12 @@ package body Netlists.Disp_Common is
 
       case Kind is
          when Sname_User =>
-            Put_Id (Get_Sname_Suffix (N));
+            Put_Id (Get_Sname_Suffix (N), Lang, Is_Extended);
          when Sname_System =>
-            Put_Id (Get_Sname_Suffix (N));
+            Put_Id (Get_Sname_Suffix (N), Lang, Is_Extended);
          when Sname_Field =>
             Wr ("[");
-            Put_Id (Get_Sname_Suffix (N));
+            Put_Id (Get_Sname_Suffix (N), Lang, Is_Extended);
             Wr ("]");
          when Sname_Version
            | Sname_Unique =>
@@ -108,7 +127,7 @@ package body Netlists.Disp_Common is
          Wr ("\");
       end if;
 
-      Put_Name_Inner (N);
+      Put_Name_Inner (N, Lang, Is_Extended);
 
       if Is_Extended then
          Put_Extended_End (Lang);
@@ -158,9 +177,9 @@ package body Netlists.Disp_Common is
                  | Id_User_None .. Module_Id'Last =>
                   --  Gates with multiple outputs.
                   Wr ("\");
-                  Put_Name_Inner (Inst_Name);
+                  Put_Name_Inner (Inst_Name, Lang, True);
                   Wr (".");
-                  Put_Name_Inner (Get_Output_Desc (M, Idx).Name);
+                  Put_Name_Inner (Get_Output_Desc (M, Idx).Name, Lang, True);
                   Put_Extended_End (Lang);
                when others =>
                   Put_Name (Inst_Name, Lang);
@@ -228,4 +247,120 @@ package body Netlists.Disp_Common is
       end loop;
       return False;
    end Need_Edge;
+
+   procedure Put_Id (N : Name_Id) is
+   begin
+      Wr (Name_Table.Image (N));
+   end Put_Id;
+
+   procedure Disp_Binary_Digit (Va : Uns32; Zx : Uns32; I : Natural) is
+   begin
+      Wr (Bchar (((Va / 2**I) and 1) + ((Zx / 2**I) and 1) * 2));
+   end Disp_Binary_Digit;
+
+   procedure Disp_Binary_Digits (Va : Uns32; Zx : Uns32; W : Natural) is
+   begin
+      for I in 1 .. W loop
+         Disp_Binary_Digit (Va, Zx, W - I);
+      end loop;
+   end Disp_Binary_Digits;
+
+   procedure Disp_Pval_Binary_Digits (Pv : Pval)
+   is
+      Len : constant Uns32 := Get_Pval_Length (Pv);
+      V   : Logic_32;
+      Off : Uns32;
+   begin
+      if Len = 0 then
+         return;
+      end if;
+
+      V := Read_Pval (Pv, (Len - 1) / 32);
+      for I in reverse 0 .. Len - 1 loop
+         Off := I mod 32;
+         if Off = 31 then
+            V := Read_Pval (Pv, I / 32);
+         end if;
+         Disp_Binary_Digit (V.Val, V.Zx, Natural (Off));
+      end loop;
+   end Disp_Pval_Binary_Digits;
+
+   procedure Disp_Pval_Binary (Pv : Pval) is
+   begin
+      Wr ('"');
+      Disp_Pval_Binary_Digits (Pv);
+      Wr ('"');
+   end Disp_Pval_Binary;
+
+   procedure Disp_Pval_Integer (Pv : Pval)
+   is
+      use Types_Utils;
+      Len : constant Uns32 := Get_Pval_Length (Pv);
+      pragma Assert (Len <= 64);
+      Lg : Logic_32;
+      V : Uns64;
+      Res : Int64;
+   begin
+      Lg := Read_Pval (Pv, 0);
+      pragma Assert (Lg.Zx = 0);
+      V := Uns64 (Lg.Val);
+      if Len > 32 then
+         Lg := Read_Pval (Pv, 1);
+         pragma Assert (Lg.Zx = 0);
+         V := V or Shift_Left (Uns64 (Lg.Val), 32);
+      end if;
+
+      --  Sign extend.
+      V := Shift_Left (V, Natural (64 - Len));
+      V := Shift_Right_Arithmetic (V, Natural (64 - Len));
+
+      Res := To_Int64 (V);
+      Wr_Trim (Int64'Image (Res));
+   end Disp_Pval_Integer;
+
+   procedure Disp_Pval_String (Pv : Pval)
+   is
+      Len : constant Uns32 := Get_Pval_Length (Pv);
+      pragma Assert (Len rem 8 = 0);
+      V   : Logic_32;
+      Off : Uns32;
+      C   : Uns32;
+   begin
+      Wr ('"');
+      if Len > 0 then
+         V := Read_Pval (Pv, (Len - 1) / 32);
+         for I in reverse 0 .. (Len / 8) - 1 loop
+            Off := I mod 4;
+            if Off = 3 then
+               V := Read_Pval (Pv, I / 4);
+            end if;
+            pragma Assert (V.Zx = 0);
+            C := Shift_Right (V.Val, Natural (8 * Off)) and 16#ff#;
+            Wr (Character'Val (C));
+         end loop;
+      end if;
+      Wr ('"');
+   end Disp_Pval_String;
+
+   procedure Disp_Pval_Fp64 (Pv : Pval)
+   is
+      use Types_Utils;
+      pragma Assert (Get_Pval_Length (Pv) = 64);
+      Lg : Logic_32;
+      F : Uns64;
+      Res : Fp64;
+      Last : Natural;
+      Img : String (1 .. 24);
+   begin
+      F := 0;
+      for I in 0 .. 1 loop
+         Lg := Read_Pval (Pv, Uns32 (I));
+         pragma Assert (Lg.Zx = 0);
+         F := F or Shift_Left (Uns64 (Lg.Val), I * 32);
+      end loop;
+
+      Res := To_Fp64 (F);
+      Grt.Fcvt.Format_Image (Img, Last, Grt.Types.Ghdl_F64 (Res));
+      Wr_Trim (Img (1 .. Last));
+   end Disp_Pval_Fp64;
 end Netlists.Disp_Common;

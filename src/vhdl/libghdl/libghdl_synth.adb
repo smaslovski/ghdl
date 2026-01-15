@@ -1,5 +1,5 @@
 --  Library interface for the synthesizer.
---  Copyright (C) 2025 Tristan Gingold
+--  Copyright (C) 2026 Tristan Gingold
 --
 --  This program is free software: you can redistribute it and/or modify
 --  it under the terms of the GNU General Public License as published by
@@ -25,7 +25,7 @@ with Types_Utils;
 with Bug;
 
 with Netlists.Errors;
-with Netlists.Dump;
+with Netlists.Disp_Common;
 
 with Vhdl.Std_Package;
 with Vhdl.Configuration;
@@ -302,7 +302,7 @@ package body Libghdl_Synth is
       for I in 1 .. Nparams loop
          declare
             use Outputs;
-            use Netlists.Dump;
+            use Netlists.Disp_Common;
             Cname : constant Ghdl_C_String := Params (I - 1).Str;
             Name_Len : constant Natural := strlen (Cname);
             Name : String (1 .. Name_Len);

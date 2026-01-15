@@ -651,7 +651,8 @@ package Verilog.Nodes is
    --N_Inout_Terminal
    --N_Output_Terminal
    --N_Port_Connection
-     N_Wildcard_Connection;
+   --N_Wildcard_Connection
+     N_Implicit_Connection;
 
    subtype Nkinds_Case is Nkind range
      N_Case ..
@@ -1042,6 +1043,8 @@ package Verilog.Nodes is
    --   Get/Set_Descriptions (Field3)
    --
    --   Get/Set_Scope_Id (Field5)
+   --
+   --   Get/Set_Blackbox_Flag (Flag2)
 
    -- N_Timescale_Directive (Short)
    -- N_Timeunits_Declaration (Short)
@@ -1091,6 +1094,9 @@ package Verilog.Nodes is
    --   Get/Set_Attributes_Chain (Field9)
    --
    --   Get/Set_Instantiated_Flag (Flag1)
+   --
+   --  Set when the module should be considered as a blackbox (vendor module)
+   --   Get/Set_Blackbox_Flag (Flag2)
    --
    --   Get/Set_Ansi_Port_Flag (Flag4)
    --
@@ -4355,6 +4361,7 @@ package Verilog.Nodes is
    function Get_Stride_Width (N : Node) return Width_Type;
    procedure Set_Stride_Width (N : Node; Width : Width_Type);
 
+   --  Storage size of the element (distance in bytes between two elements).
    --  Field: Field1 (uc)
    function Get_Stride_Size (N : Node) return Tsize_Type;
    procedure Set_Stride_Size (N : Node; Width : Tsize_Type);
@@ -4854,6 +4861,10 @@ package Verilog.Nodes is
    --  Field: Flag1
    function Get_Instantiated_Flag (N : Node) return Boolean;
    procedure Set_Instantiated_Flag (N : Node; Flag : Boolean);
+
+   --  Field: Flag2
+   function Get_Blackbox_Flag (N : Node) return Boolean;
+   procedure Set_Blackbox_Flag (N : Node; Flag : Boolean);
 
    --  If set, the module is using port declarations, aka ANSI ports.
    --  If not set, the module uses a port_list and the ports are declared
